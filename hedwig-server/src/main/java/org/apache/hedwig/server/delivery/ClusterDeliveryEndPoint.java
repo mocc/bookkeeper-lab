@@ -262,8 +262,8 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
             }
             dcb = new ClusterDeliveryCallback(entry.getKey(), entry.getValue(), msg);
             long seqid = msg.msg.getMessage().getMsgId().getLocalComponent();
-            pendings.put(seqid, msg);
             msg.resetDeliveredTime(entry.getKey());
+			pendings.put(seqid, msg);
             addDeliveryEndPoint(entry.getKey(), entry.getValue());
         }
         entry.getKey().send(msg.msg, dcb);

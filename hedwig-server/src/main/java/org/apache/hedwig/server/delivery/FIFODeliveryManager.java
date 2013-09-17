@@ -510,7 +510,7 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
             } else {
                 synchronized (subscriber) {
                     subscriber.lastSeqIdCommunicatedExternally = subscriber.lastLocalSeqIdDelivered;
-                    addDeliveryPtr(curSubscriber, subscriber.lastLocalSeqIdDelivered);
+                    addDeliveryPtr(subscriber, subscriber.lastLocalSeqIdDelivered);
                 }
                 subscriber.deliverNextMessage();
             }

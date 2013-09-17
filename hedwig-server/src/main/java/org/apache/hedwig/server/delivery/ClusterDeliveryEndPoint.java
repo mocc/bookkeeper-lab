@@ -37,15 +37,24 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
 
     volatile boolean closed = false;
     final ReentrantReadWriteLock closeLock = new ReentrantReadWriteLock();
-    final LinkedHashMap<DeliveryEndPoint, DeliveryState> endpoints =
-            new LinkedHashMap<DeliveryEndPoint, DeliveryState>();
+    final LinkedHashMap<DeliveryEndPoint, DeliveryState> endpoints = new LinkedHashMap<DeliveryEndPoint, DeliveryState>();
+    // endpoints store all clients' deliveryEndPoints which are not throttled
+    final LinkedHashMap<DeliveryEndPoint, DeliveryState> throttledEndpoints = new LinkedHashMap<DeliveryEndPoint, DeliveryState>();
+    // throttledEndpoints store all clients'deliveryEndpoints throttled
     final HashMap<Long, DeliveredMessage> pendings = new HashMap<Long, DeliveredMessage>();
     final String label;
-    final int messageWindowSize;
     final ScheduledExecutorService scheduler;
 
+    /*
+     * modified by hrq.
+     */
     static class DeliveryState {
         SortedSet<Long> msgs = new TreeSet<Long>();
+        int messageWindowSize; // this is a message window size for every client
+
+        public DeliveryState(int messageWindowSize) {
+            this.messageWindowSize = messageWindowSize;
+        }
     }
 
     class DeliveredMessage {
@@ -104,6 +113,9 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
 
     };
 
+    /*
+     * modified by hrq.
+     */
     class RedeliveryTask implements Runnable {
 
         final DeliveryState state;
@@ -123,14 +135,26 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
                 closeLock.readLock().unlock();
             }
             Set<DeliveredMessage> msgs = new HashSet<DeliveredMessage>();
-            synchronized (endpoints) {
-                for (long seqid : state.msgs) {
-                    DeliveredMessage msg = pendings.get(seqid);
-                    if (null != msg) {
-                        msgs.add(msg);
+            if (endpoints.containsValue(state)) {
+                synchronized (endpoints) {
+                    for (long seqid : state.msgs) {
+                        DeliveredMessage msg = pendings.get(seqid);
+                        if (null != msg) {
+                            msgs.add(msg);
+                        }
+                    }
+                }
+            } else {
+                synchronized (throttledEndpoints) {
+                    for (long seqid : state.msgs) {
+                        DeliveredMessage msg = pendings.get(seqid);
+                        if (null != msg) {
+                            msgs.add(msg);
+                        }
                     }
                 }
             }
+
             for (DeliveredMessage msg : msgs) {
                 DeliveryEndPoint ep = send(msg);
                 if (null == ep) {
@@ -143,14 +167,19 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
 
     }
 
-    public ClusterDeliveryEndPoint(String label, int messageWindowSize, ScheduledExecutorService scheduler) {
+    /*
+     * modified by hrq.
+     */
+    public ClusterDeliveryEndPoint(String label, ScheduledExecutorService scheduler) {
         this.label = label;
-        this.messageWindowSize = messageWindowSize;
         this.scheduler = scheduler;
     }
 
-    public void addDeliveryEndPoint(DeliveryEndPoint endPoint) {
-        addDeliveryEndPoint(endPoint, new DeliveryState());
+    /*
+     * modified by hrq.
+     */
+    public void addDeliveryEndPoint(DeliveryEndPoint endPoint, int messageWindowSize) {
+        addDeliveryEndPoint(endPoint, new DeliveryState(messageWindowSize));
     }
 
     private void addDeliveryEndPoint(DeliveryEndPoint endPoint, DeliveryState state) {
@@ -180,10 +209,19 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
         }
     }
 
+    /*
+     * modified by hrq.
+     */
     public void removeDeliveryEndPoint(DeliveryEndPoint endPoint) {
         DeliveryState state;
         synchronized (endpoints) {
-            state = endpoints.remove(endPoint);
+            if (endpoints.containsKey(endPoint)) {
+                state = endpoints.remove(endPoint);
+            } else {
+                synchronized (throttledEndpoints) {
+                    state = throttledEndpoints.remove(endPoint);
+                }
+            }
         }
         if (null == state) {
             return;
@@ -212,13 +250,19 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
     @Override
     public boolean messageConsumed(long newSeqIdConsumed) {
         DeliveredMessage msg;
-        synchronized (endpoints) {
-            msg = pendings.remove(newSeqIdConsumed);
-            if (null != msg && null != msg.lastDeliveredEP) {
-                DeliveryState state = endpoints.get(msg.lastDeliveredEP);
-                if (null != state) {
-                    state.msgs.remove(newSeqIdConsumed);
-                }
+        DeliveryState state = null;
+
+        msg = pendings.remove(newSeqIdConsumed);
+        DeliveryEndPoint lastDeliveredEP = msg.lastDeliveredEP;
+        if (null != msg && null != lastDeliveredEP) {
+            synchronized (endpoints) {
+                if (endpoints.containsKey(lastDeliveredEP)) {
+                    state = endpoints.get(lastDeliveredEP);
+                    if (state.msgs != null) {
+                        state.msgs.remove(newSeqIdConsumed);
+                    }
+                } else
+                    updateThrottledEndpoints(lastDeliveredEP, newSeqIdConsumed);
             }
         }
         return null != msg;
@@ -227,7 +271,44 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
     @Override
     public boolean shouldThrottle(long lastSeqIdDelivered) {
         synchronized (endpoints) {
-            return pendings.size() >= messageWindowSize;
+            return endpoints.isEmpty();
+        }
+    }
+
+    /*
+     * add by hrq.
+     * 
+     * This method is used to update throttledEndpoints and endpoints after
+     * sending message.
+     */
+    private void updateEndpoints(DeliveryEndPoint ep, DeliveryState state) {
+        // update throttleEndpoints
+        synchronized (throttledEndpoints) {
+            if (endpoints.containsKey(ep))
+                endpoints.remove(ep);
+            throttledEndpoints.put(ep, state);
+        }
+    }
+
+    /*
+     * add by hrq.
+     * 
+     * This method is used to update throttledEndpoints and endpoints after
+     * message consumed
+     */
+    private void updateThrottledEndpoints(DeliveryEndPoint ep, long msgSeqId) {
+        // update endpoints
+        synchronized (throttledEndpoints) {
+            // Here we know lastDeliveredEP doesn't exist in endPoints,
+            // but it may also not exist in throttledEndPoints.
+            // Since this EP may be removed from cluster for disconnection
+            // problem.
+            if (throttledEndpoints.containsKey(ep)) {
+                DeliveryState state = throttledEndpoints.get(ep);
+                state.msgs.remove(msgSeqId);
+                endpoints.put(ep, state);
+                throttledEndpoints.remove(ep);
+            }
         }
     }
 
@@ -252,6 +333,9 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
         }
     }
 
+    /*
+     * modified by hrq.
+     */
     private DeliveryEndPoint send(final DeliveredMessage msg) {
         Entry<DeliveryEndPoint, DeliveryState> entry = pollDeliveryEndPoint();
         DeliveryCallback dcb;
@@ -260,13 +344,21 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
                 // no delivery endpoint found
                 return null;
             }
+            // update the treeSet "msg" of deliveryState
             dcb = new ClusterDeliveryCallback(entry.getKey(), entry.getValue(), msg);
             long seqid = msg.msg.getMessage().getMsgId().getLocalComponent();
             msg.resetDeliveredTime(entry.getKey());
-			pendings.put(seqid, msg);
-            addDeliveryEndPoint(entry.getKey(), entry.getValue());
+            pendings.put(seqid, msg);
+            // Here we should check whether this deliveryEndpoint should be
+            // throttled,
+            // then we can decide to put into endpoints or throttledEndpoints
+            if (entry.getValue().msgs.size() < entry.getValue().messageWindowSize)
+                addDeliveryEndPoint(entry.getKey(), entry.getValue());
+            else
+                updateEndpoints(entry.getKey(), entry.getValue());
         }
         entry.getKey().send(msg.msg, dcb);
+        // if this operation fails, trigger redelivery of this message.
         return entry.getKey();
     }
 

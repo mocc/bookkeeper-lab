@@ -32,8 +32,11 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.bookkeeper.util.MathUtils;
 import org.apache.hedwig.protocol.PubSubProtocol.PubSubResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPolicy {
+    private static final Logger logger = LoggerFactory.getLogger(ClusterDeliveryEndPoint.class);
 
     volatile boolean closed = false;
     final ReentrantReadWriteLock closeLock = new ReentrantReadWriteLock();
@@ -248,6 +251,9 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
     }
 
     @Override
+    /*
+     * modified by hrq
+     */
     public boolean messageConsumed(long newSeqIdConsumed) {
         DeliveredMessage msg;
         DeliveryState state = null;
@@ -269,6 +275,9 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
     }
 
     @Override
+    /*
+     * modified by hrq
+     */
     public boolean shouldThrottle(long lastSeqIdDelivered) {
         synchronized (endpoints) {
             return endpoints.isEmpty();
@@ -337,35 +346,47 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
      * modified by hrq.
      */
     private DeliveryEndPoint send(final DeliveredMessage msg) {
-        Entry<DeliveryEndPoint, DeliveryState> entry = pollDeliveryEndPoint();
+        Entry<DeliveryEndPoint, DeliveryState> entry = null;
+
         DeliveryCallback dcb;
         synchronized (endpoints) {
+            entry = pollDeliveryEndPoint();
             if (null == entry) {
                 // no delivery endpoint found
                 return null;
             }
             // update the treeSet "msg" of deliveryState
+
             dcb = new ClusterDeliveryCallback(entry.getKey(), entry.getValue(), msg);
             long seqid = msg.msg.getMessage().getMsgId().getLocalComponent();
             msg.resetDeliveredTime(entry.getKey());
             pendings.put(seqid, msg);
-            // Here we should check whether this deliveryEndpoint should be
+
+            // we should check whether this deliveryEndpoint should be
             // throttled,
             // then we can decide to put into endpoints or throttledEndpoints
+
             if (entry.getValue().msgs.size() < entry.getValue().messageWindowSize)
                 addDeliveryEndPoint(entry.getKey(), entry.getValue());
             else
                 updateEndpoints(entry.getKey(), entry.getValue());
         }
+
         entry.getKey().send(msg.msg, dcb);
         // if this operation fails, trigger redelivery of this message.
         return entry.getKey();
     }
 
+    /*
+     * modified by hrq
+     */
     public void sendSubscriptionEvent(PubSubResponse resp) {
         List<Entry<DeliveryEndPoint, DeliveryState>> eps;
         synchronized (endpoints) {
             eps = new ArrayList<Entry<DeliveryEndPoint, DeliveryState>>(endpoints.entrySet());
+        }
+        synchronized (throttledEndpoints) {
+            eps.addAll(throttledEndpoints.entrySet());
         }
         for (final Entry<DeliveryEndPoint, DeliveryState> entry : eps) {
             entry.getKey().send(resp, new DeliveryCallback() {

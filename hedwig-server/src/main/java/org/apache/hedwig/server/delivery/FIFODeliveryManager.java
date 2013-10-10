@@ -21,6 +21,7 @@ import static org.apache.hedwig.util.VarArgs.va;
 
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.NoSuchElementException;
 import java.util.Queue;
 import java.util.Set;
 import java.util.SortedMap;
@@ -33,6 +34,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.bookkeeper.util.MathUtils;
@@ -50,6 +52,8 @@ import org.apache.hedwig.protocol.PubSubProtocol.SubscriptionType;
 import org.apache.hedwig.protoextensions.PubSubResponseUtils;
 import org.apache.hedwig.server.common.ServerConfiguration;
 import org.apache.hedwig.server.common.UnexpectedError;
+import org.apache.hedwig.server.delivery.ClusterDeliveryEndPoint.DeliveredMessage;
+import org.apache.hedwig.server.delivery.ClusterDeliveryEndPoint.DeliveryState;
 import org.apache.hedwig.server.handlers.SubscriptionChannelManager.SubChannelDisconnectedListener;
 import org.apache.hedwig.server.netty.ServerStats;
 import org.apache.hedwig.server.persistence.CancelScanRequest;
@@ -504,13 +508,12 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
             // trigger the callback to tell it started to deliver the message
             // should let subscriber response go first before first delivered message.
             subscriber.cb.operationFinished(subscriber.ctx, (Void) null);
-
             if (curSubscriber != null) {
                 ((ClusterSubscriber) curSubscriber).clusterEP.addDeliveryEndPoint(endpoint);
             } else {
                 synchronized (subscriber) {
                     subscriber.lastSeqIdCommunicatedExternally = subscriber.lastLocalSeqIdDelivered;
-                    addDeliveryPtr(curSubscriber, subscriber.lastLocalSeqIdDelivered);
+                    addDeliveryPtr(/*curSubscriber*/subscriberStates.get(ts), subscriber.lastLocalSeqIdDelivered);
                 }
                 subscriber.deliverNextMessage();
             }
@@ -519,8 +522,51 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
     }
 
     class ClusterSubscriber extends ActiveSubscriberState {
+    	private final ClusterDeliveryEndPoint clusterEP;
+    	
+    	//long count=0; //ly
+    	final long timeOut = 5000;                                            //ly
+		AtomicLong lastCheckTime = new AtomicLong(System.currentTimeMillis());//ly
+        @Override
+		public void deliverNextMessage() {                                    //ly
+			// TODO Auto-generated method stub
+        	checkTimeOut();
+			super.deliverNextMessage();
+		}
+        
+        public void checkTimeOut() {                                          //ly
+        	//count++;
+        	//logger.info("enter checkTimeOut......................deliver msg"+count);
+			long now = System.currentTimeMillis();
+			if (now - timeOut > lastCheckTime.get()) {
+				//logger.info("time to check whether there is timeout msg....................");
+				checkExpiredMessages(now);
+				lastCheckTime.set(now);
+			}
+		}
+        private void checkExpiredMessages(long currentTime) {                  //ly
+			//long seq;
+			for (DeliveryEndPoint ep : clusterEP.endpoints.keySet()) {
+				//qc = allConsumers.get(channel);
+				DeliveryState state = clusterEP.endpoints.get(ep);
+				if (state.msgs.isEmpty())
+					continue;
+				// No sync, but catch the exception, because remove could be
+				// executed in other thread
+				for(long seq:state.msgs){
+					
+					DeliveredMessage msg=clusterEP.pendings.get(seq);
+					if (currentTime - msg.lastDeliveredTime < timeOut) {	
+						continue;
+					}
+					logger.info("msgseq " + seq + " timeout...............");
+					clusterEP.closeAndRedeliver(ep, state);
+					break;
+				}				
+				//return;
 
-        private final ClusterDeliveryEndPoint clusterEP;
+			}
+		}
 
         public ClusterSubscriber(ByteString topic, ByteString subscriberId, SubscriptionPreferences preferences,
                 long lastLocalSeqIdDelivered, ClusterDeliveryEndPoint deliveryEndPoint, ServerMessageFilter filter,
@@ -528,6 +574,7 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
             super(topic, subscriberId, preferences, lastLocalSeqIdDelivered, deliveryEndPoint, filter,
                     deliveryEndPoint, cb, ctx);
             clusterEP = deliveryEndPoint;
+         
         }
 
         @Override
@@ -581,7 +628,7 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
         }
 
     }
-
+   
     abstract class ActiveSubscriberState
         implements ScanCallback, DeliveryCallback, DeliveryManagerRequest, CancelScanRequest {
 
@@ -599,7 +646,10 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
         ServerMessageFilter filter;
         Callback<Void> cb;
         Object ctx;
-
+        
+        
+		
+        
         // track the outstanding scan request
         // so we could cancel it
         ScanRequest outstandingScanRequest;
@@ -625,6 +675,8 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
 
         abstract void sendSubscriptionEventToDeliveryChannel(SubscriptionEvent event);
 
+       
+        
         public void setNotConnected(SubscriptionEvent event) {
             this.connectedLock.writeLock().lock();
             try {
@@ -860,6 +912,7 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
             // the underlying channel is broken, the channel will
             // be closed in UmbrellaHandler when exception happened.
             // so we don't need to close the channel again
+        	System.out.println("permanentErrorOnSend.............................");
             stopServingSubscriber(topic, subscriberId, null, deliveryEndPoint,
                                   NOP_CALLBACK, null);
         }
@@ -1078,6 +1131,7 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
 
     @Override
     public void onSubChannelDisconnected(TopicSubscriber topicSubscriber, Channel channel) {
+    	//System.out.println("onSubChannelDisconnected.............................");
         stopServingSubscriber(topicSubscriber.getTopic(), topicSubscriber.getSubscriberId(),
                 null, new ChannelEndPoint(channel), NOP_CALLBACK, null);
     }

@@ -45,16 +45,24 @@ public class ChannelEndPoint implements DeliveryEndPoint, ChannelFutureListener 
         channel.close();
     }
 
-    public void send(PubSubResponse response, DeliveryCallback callback) {
-        ChannelFuture future = channel.write(response);
-        callbacks.put(future, callback);
+    public  void send(PubSubResponse response, DeliveryCallback callback) {
+    	ChannelFuture future;
+    	future = channel.write(response);
+    	synchronized(callbacks){
+    		
+    		callbacks.put(future, callback);
+    	}
+        
         future.addListener(this);
     }
 
     public void operationComplete(ChannelFuture future) throws Exception {
-        DeliveryCallback callback = callbacks.get(future);
-        callbacks.remove(future);
-
+        DeliveryCallback callback ;
+        //callbacks.remove(future);
+        synchronized(callbacks){
+        	 callback = callbacks.get(future);
+             callbacks.remove(future);
+    	}
         if (callback == null) {
             throw new UnexpectedError("Could not locate callback for channel future");
         }

@@ -86,7 +86,9 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
             // add this msgs to current delivery endpoint state
             this.state.msgs.add(msg.msg.getMessage().getMsgId().getLocalComponent());
         }
-
+        public DeliveryState getState(){
+        	return state;
+        }
         @Override
         public void sendingFinished() {
             // nop
@@ -167,7 +169,7 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
         }
     }
 
-    private void closeAndRedeliver(DeliveryEndPoint ep, DeliveryState state) {
+    public void closeAndRedeliver(DeliveryEndPoint ep, DeliveryState state) {
         closeLock.readLock().lock();
         try {
             if (closed) {
@@ -194,6 +196,7 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
     // the caller should synchronize
     private Entry<DeliveryEndPoint, DeliveryState> pollDeliveryEndPoint() {
         if (endpoints.isEmpty()) {
+        	System.out.println("endpoints is empty.................");
             return null;
         } else {
             Iterator<Entry<DeliveryEndPoint, DeliveryState>> iter = endpoints.entrySet().iterator();
@@ -242,9 +245,11 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
             DeliveryEndPoint ep = send(new DeliveredMessage(response));
             if (null == ep) {
                 // no delivery endpoint
+            	//System.out.println("ep is null...................");
                 callback.permanentErrorOnSend();
             } else {
                 // callback after sending the message
+            	//System.out.println("ep is not null...................");
                 callback.sendingFinished();
             }
         } finally {
@@ -253,18 +258,23 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
     }
 
     private DeliveryEndPoint send(final DeliveredMessage msg) {
-        Entry<DeliveryEndPoint, DeliveryState> entry = pollDeliveryEndPoint();
+        Entry<DeliveryEndPoint, DeliveryState> entry ;
         DeliveryCallback dcb;
         synchronized (endpoints) {
+        	entry = pollDeliveryEndPoint(); //ly
             if (null == entry) {
                 // no delivery endpoint found
+            	//System.out.println("no delivery endpoint found.................");
                 return null;
             }
             dcb = new ClusterDeliveryCallback(entry.getKey(), entry.getValue(), msg);
             long seqid = msg.msg.getMessage().getMsgId().getLocalComponent();
-            pendings.put(seqid, msg);
+            //pendings.put(seqid, msg);
             msg.resetDeliveredTime(entry.getKey());
-            addDeliveryEndPoint(entry.getKey(), entry.getValue());
+            //addDeliveryEndPoint(entry.getKey(), entry.getValue());
+            addDeliveryEndPoint(entry.getKey(),((ClusterDeliveryCallback)dcb).getState());//ly
+            pendings.put(seqid, msg);//ly
+            //entry.getKey().send(msg.msg, dcb);//ly
         }
         entry.getKey().send(msg.msg, dcb);
         return entry.getKey();

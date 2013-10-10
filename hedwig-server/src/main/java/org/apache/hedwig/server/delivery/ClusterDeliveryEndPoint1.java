@@ -28,7 +28,6 @@ import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.bookkeeper.util.MathUtils;
@@ -36,12 +35,11 @@ import org.apache.hedwig.protocol.PubSubProtocol.PubSubResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPolicy {
-    private static final Logger logger = LoggerFactory.getLogger(ClusterDeliveryEndPoint.class);
+public class ClusterDeliveryEndPoint1 implements DeliveryEndPoint, ThrottlingPolicy {
+    private static final Logger logger = LoggerFactory.getLogger(ClusterDeliveryEndPoint1.class);
 
     volatile boolean closed = false;
     final ReentrantReadWriteLock closeLock = new ReentrantReadWriteLock();
-    final ReentrantLock endpointLock = new ReentrantLock();
     final LinkedHashMap<DeliveryEndPoint, DeliveryState> endpoints = new LinkedHashMap<DeliveryEndPoint, DeliveryState>();
     // endpoints store all clients' deliveryEndPoints which are not throttled
     final LinkedHashMap<DeliveryEndPoint, DeliveryState> throttledEndpoints = new LinkedHashMap<DeliveryEndPoint, DeliveryState>();
@@ -142,27 +140,25 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
             logger.debug("Redelivery Task begin !!");
             Set<DeliveredMessage> msgs = new HashSet<DeliveredMessage>();
 
-            endpointLock.lock();
-            try {
-                if (endpoints.containsValue(state) || throttledEndpoints.containsValue(state)) {
-                    for (long seqid : state.msgs) {
-                        DeliveredMessage msg = pendings.get(seqid);
-                        if (null != msg) {
-                            msgs.add(msg);
+            synchronized (endpoints) {
+                synchronized (throttledEndpoints) {
+                    if (endpoints.containsValue(state) || throttledEndpoints.containsValue(state)) {
+                        for (long seqid : state.msgs) {
+                            DeliveredMessage msg = pendings.get(seqid);
+                            if (null != msg) {
+                                msgs.add(msg);
+                            }
                         }
-                    }
-                } else
-                    return;
-
-            } finally {
-                endpointLock.unlock();
+                    } else
+                        return;
+                }
             }
 
             for (DeliveredMessage msg : msgs) {
                 DeliveryEndPoint ep = send(msg);
                 if (null == ep) {
                     // no delivery channel found
-                    ClusterDeliveryEndPoint.this.close();
+                    ClusterDeliveryEndPoint1.this.close();
                     return;
                 }
             }
@@ -173,7 +169,7 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
     /*
      * modified by hrq.
      */
-    public ClusterDeliveryEndPoint(String label, ScheduledExecutorService scheduler) {
+    public ClusterDeliveryEndPoint1(String label, ScheduledExecutorService scheduler) {
         this.label = label;
         this.scheduler = scheduler;
     }
@@ -191,14 +187,9 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
             if (closed) {
                 return;
             }
-
-            endpointLock.lock();
-            try {
+            synchronized (endpoints) {
                 endpoints.put(endPoint, state);
-            } finally {
-                endpointLock.unlock();
             }
-
         } finally {
             closeLock.readLock().unlock();
         }
@@ -223,24 +214,22 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
      */
     public void removeDeliveryEndPoint(DeliveryEndPoint endPoint) {
         DeliveryState state = null;
+        synchronized (endpoints) {
+            synchronized (throttledEndpoints) {
+                if (endpoints.containsKey(endPoint)) {
+                    state = endpoints.remove(endPoint);
+                    logger.debug(endPoint.toString() + "is removed from endpoints.");
+                } else if (throttledEndpoints.containsKey(endPoint)) {
+                    state = throttledEndpoints.remove(endPoint);
+                    logger.debug(endPoint.toString() + "is removed from throttledEndpoints.");
+                }
 
-        endpointLock.lock();
-        try {
-            if (endpoints.containsKey(endPoint)) {
-                state = endpoints.remove(endPoint);
-                logger.debug(endPoint.toString() + "is removed from endpoints.");
-            } else if (throttledEndpoints.containsKey(endPoint)) {
-                state = throttledEndpoints.remove(endPoint);
-                logger.debug(endPoint.toString() + "is removed from throttledEndpoints.");
+                if (null == state) {
+                    return;
+                } else if (state.msgs.size() != 0) {
+                    return;
+                }
             }
-
-            if (null == state) {
-                return;
-            } else if (state.msgs.size() != 0) {
-                return;
-            }
-        } finally {
-            endpointLock.unlock();
         }
 
         closeAndRedeliver(endPoint, state);
@@ -262,11 +251,8 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
     }
 
     public boolean hasAvailableDeliveryEndPoints() {
-        endpointLock.lock();
-        try {
+        synchronized (endpoints) {
             return !endpoints.isEmpty();
-        } finally {
-            endpointLock.unlock();
         }
     }
 
@@ -282,40 +268,34 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
         DeliveryEndPoint lastDeliveredEP = msg.lastDeliveredEP;
 
         if (null != msg && null != lastDeliveredEP) {
+            synchronized (endpoints) {
+                synchronized (throttledEndpoints) {
+                    if (endpoints.containsKey(lastDeliveredEP)) {
+                        state = endpoints.get(lastDeliveredEP);
 
-            endpointLock.lock();
-            try {
-                if (endpoints.containsKey(lastDeliveredEP)) {
-                    state = endpoints.get(lastDeliveredEP);
+                        if (state.msgs.size() != 0) {
+                            state.msgs.remove(newSeqIdConsumed);
+                            logger.debug("message is consumed in endpoints: "
+                                    + msg.msg.getMessage().getBody().toStringUtf8());
+                        }
 
-                    if (state.msgs.size() != 0) {
-                        state.msgs.remove(newSeqIdConsumed);
+                    } else if (throttledEndpoints.containsKey(lastDeliveredEP)) {
+                        state = throttledEndpoints.get(lastDeliveredEP);
 
-                        logger.debug("message is consumed in endpoints: "
-                                + msg.msg.getMessage().getBody().toStringUtf8());
-                    }
+                        if (state.msgs.size() != 0) {
+                            state.msgs.remove(newSeqIdConsumed);
+                            logger.debug("message is consumed in throttledEndpoints: "
+                                    + msg.msg.getMessage().getBody().toStringUtf8());
+                            endpoints.put(lastDeliveredEP, state);
+                            throttledEndpoints.remove(lastDeliveredEP);
+                            logger.debug(lastDeliveredEP.toString()
+                                    + "move from throttledEndpoints to endpoints on consuming");
+                        }
 
-                } else if (throttledEndpoints.containsKey(lastDeliveredEP)) {
-                    state = throttledEndpoints.get(lastDeliveredEP);
-
-                    if (state.msgs.size() != 0) {
-                        state.msgs.remove(newSeqIdConsumed);
-                        logger.debug("message is consumed in throttledEndpoints: "
-                                + msg.msg.getMessage().getBody().toStringUtf8());
-
-                        endpoints.put(lastDeliveredEP, state);
-                        throttledEndpoints.remove(lastDeliveredEP);
-
-                        logger.debug(lastDeliveredEP.toString()
-                                + "move from throttledEndpoints to endpoints on consuming");
-                    }
-
-                } else
-                    return false;
-            } finally {
-                endpointLock.unlock();
+                    } else
+                        return false;
+                }
             }
-
             return true;
         }
         return false;
@@ -326,11 +306,8 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
      */
     @Override
     public boolean shouldThrottle(long lastSeqIdDelivered) {
-        endpointLock.lock();
-        try {
+        synchronized (endpoints) {
             return endpoints.isEmpty();
-        } finally {
-            endpointLock.unlock();
         }
     }
 
@@ -360,10 +337,9 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
      */
     private DeliveryEndPoint send(final DeliveredMessage msg) {
         Entry<DeliveryEndPoint, DeliveryState> entry = null;
-        DeliveryCallback dcb;
 
-        endpointLock.lock();
-        try {
+        DeliveryCallback dcb;
+        synchronized (endpoints) {
             entry = pollDeliveryEndPoint();
             if (null == entry) {
                 // no delivery endpoint found
@@ -380,15 +356,15 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
             // throttled,
             // then we can decide to put into endpoints or throttledEndpoints
 
-            if (entry.getValue().msgs.size() < entry.getValue().messageWindowSize) {
+            if (entry.getValue().msgs.size() < entry.getValue().messageWindowSize)
                 addDeliveryEndPoint(entry.getKey(), entry.getValue());
-            } else {
-                throttledEndpoints.put(entry.getKey(), entry.getValue());
-                logger.debug(entry.getKey().toString() + "is moved from endpoints to throttledEndpoints on sending");
+            else {
+                synchronized (throttledEndpoints) {
+                    throttledEndpoints.put(entry.getKey(), entry.getValue());
+                    logger.debug(entry.getKey().toString() + "is moved from endpoints to throttledEndpoints on sending");
+                }
             }
 
-        } finally {
-            endpointLock.unlock();
         }
 
         entry.getKey().send(msg.msg, dcb);
@@ -401,12 +377,11 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
      */
     public void sendSubscriptionEvent(PubSubResponse resp) {
         List<Entry<DeliveryEndPoint, DeliveryState>> eps;
-        endpointLock.lock();
-        try {
-            eps = new ArrayList<Entry<DeliveryEndPoint, DeliveryState>>(endpoints.entrySet());
-            eps.addAll(throttledEndpoints.entrySet());
-        } finally {
-            endpointLock.unlock();
+        synchronized (endpoints) {
+            synchronized (throttledEndpoints) {
+                eps = new ArrayList<Entry<DeliveryEndPoint, DeliveryState>>(endpoints.entrySet());
+                eps.addAll(throttledEndpoints.entrySet());
+            }
         }
 
         for (final Entry<DeliveryEndPoint, DeliveryState> entry : eps) {

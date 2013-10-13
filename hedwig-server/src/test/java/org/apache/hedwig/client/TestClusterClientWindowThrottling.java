@@ -56,9 +56,11 @@ public class TestClusterClientWindowThrottling extends PubSubServerStandAloneTes
 
     @Override
     public void tearDown() throws Exception {
+
         client1.close();
         client2.close();
         client3.close();
+
         super.tearDown();
     }
 

@@ -523,31 +523,27 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
 
     class ClusterSubscriber extends ActiveSubscriberState {
     	private final ClusterDeliveryEndPoint clusterEP;
-    	
-    	//long count=0; //ly
-    	final long timeOut = 5000;                                            //ly
-		AtomicLong lastCheckTime = new AtomicLong(System.currentTimeMillis());//ly
+    	 /*<-- modified by liuyao*/
+    	final long timeOut = 5000;                                            
+		AtomicLong lastCheckTime = new AtomicLong(System.currentTimeMillis());
         @Override
-		public void deliverNextMessage() {                                    //ly
+		public void deliverNextMessage() {                                    
 			// TODO Auto-generated method stub
         	checkTimeOut();
 			super.deliverNextMessage();
 		}
-        
-        public void checkTimeOut() {                                          //ly
-        	//count++;
-        	//logger.info("enter checkTimeOut......................deliver msg"+count);
+        /* modified by liuyao -->*/
+        /*<-- added by liuyao*/
+        public void checkTimeOut() {                                         
 			long now = System.currentTimeMillis();
 			if (now - timeOut > lastCheckTime.get()) {
-				//logger.info("time to check whether there is timeout msg....................");
 				checkExpiredMessages(now);
 				lastCheckTime.set(now);
 			}
 		}
-        private void checkExpiredMessages(long currentTime) {                  //ly
-			//long seq;
+        private void checkExpiredMessages(long currentTime) {                 
+        	Set<DeliveredMessage> msgs = new HashSet<DeliveredMessage>();
 			for (DeliveryEndPoint ep : clusterEP.endpoints.keySet()) {
-				//qc = allConsumers.get(channel);
 				DeliveryState state = clusterEP.endpoints.get(ep);
 				if (state.msgs.isEmpty())
 					continue;
@@ -559,15 +555,13 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
 					if (currentTime - msg.lastDeliveredTime < timeOut) {	
 						continue;
 					}
+					if (null != msg)msgs.add(msg);      
 					logger.info("msgseq " + seq + " timeout...............");
-					clusterEP.closeAndRedeliver(ep, state);
-					break;
-				}				
-				//return;
-
+				}	
+				clusterEP.closeAndTimeOutRedeliver(ep,msgs);
 			}
 		}
-
+        /* added by liuyao -->*/
         public ClusterSubscriber(ByteString topic, ByteString subscriberId, SubscriptionPreferences preferences,
                 long lastLocalSeqIdDelivered, ClusterDeliveryEndPoint deliveryEndPoint, ServerMessageFilter filter,
                 Callback<Void> cb, Object ctx) {

@@ -48,7 +48,7 @@ public class ChannelEndPoint implements DeliveryEndPoint, ChannelFutureListener 
     public  void send(PubSubResponse response, DeliveryCallback callback) {
     	ChannelFuture future;
     	future = channel.write(response);
-    	synchronized(callbacks){
+    	synchronized(callbacks){//ly
     		
     		callbacks.put(future, callback);
     	}
@@ -59,7 +59,7 @@ public class ChannelEndPoint implements DeliveryEndPoint, ChannelFutureListener 
     public void operationComplete(ChannelFuture future) throws Exception {
         DeliveryCallback callback ;
         //callbacks.remove(future);
-        synchronized(callbacks){
+        synchronized(callbacks){//ly
         	 callback = callbacks.get(future);
              callbacks.remove(future);
     	}

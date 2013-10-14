@@ -144,7 +144,39 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
         }
 
     }
+    /*<-- added by liuyao*/
+    class TimeOutRedeliveryTask implements Runnable {
 
+        //final DeliveryState state;
+    	final Set<DeliveredMessage> msgs;
+
+        TimeOutRedeliveryTask(Set<DeliveredMessage> msgs) {
+            this.msgs = msgs;
+        }
+
+        @Override
+        public void run() {
+            closeLock.readLock().lock();
+            try {
+                if (closed) {
+                    return;
+                }
+            } finally {
+                closeLock.readLock().unlock();
+            }
+   
+            for (DeliveredMessage msg : msgs) {
+                DeliveryEndPoint ep = send(msg);
+                if (null == ep) {
+                    // no delivery channel found
+                    ClusterDeliveryEndPoint.this.close();
+                    return;
+                }
+            }
+        }
+
+    }
+    /* added by liuyao -->*/
     public ClusterDeliveryEndPoint(String label, int messageWindowSize, ScheduledExecutorService scheduler) {
         this.label = label;
         this.messageWindowSize = messageWindowSize;
@@ -181,7 +213,21 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
             closeLock.readLock().unlock();
         }
     }
-
+    /*<-- added by liuyao*/
+    public void closeAndTimeOutRedeliver(DeliveryEndPoint ep,Set<DeliveredMessage> msgs){
+    	System.out.println("begin redeliver.................");
+    	closeLock.readLock().lock();
+        try {
+            if (closed) {
+                return;
+            }
+            // redeliver the state
+            scheduler.submit(new TimeOutRedeliveryTask(msgs));
+        } finally {
+            closeLock.readLock().unlock();
+        }
+    }
+    /* added by liuyao -->*/
     public void removeDeliveryEndPoint(DeliveryEndPoint endPoint) {
         DeliveryState state;
         synchronized (endpoints) {
@@ -256,30 +302,25 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
             closeLock.readLock().unlock();
         }
     }
-
+    /*<-- modified by liuyao*/
     private DeliveryEndPoint send(final DeliveredMessage msg) {
         Entry<DeliveryEndPoint, DeliveryState> entry ;
         DeliveryCallback dcb;
         synchronized (endpoints) {
-        	entry = pollDeliveryEndPoint(); //ly
+        	entry = pollDeliveryEndPoint(); 
             if (null == entry) {
-                // no delivery endpoint found
-            	//System.out.println("no delivery endpoint found.................");
                 return null;
             }
             dcb = new ClusterDeliveryCallback(entry.getKey(), entry.getValue(), msg);
             long seqid = msg.msg.getMessage().getMsgId().getLocalComponent();
-            //pendings.put(seqid, msg);
             msg.resetDeliveredTime(entry.getKey());
-            //addDeliveryEndPoint(entry.getKey(), entry.getValue());
-            addDeliveryEndPoint(entry.getKey(),((ClusterDeliveryCallback)dcb).getState());//ly
-            pendings.put(seqid, msg);//ly
-            //entry.getKey().send(msg.msg, dcb);//ly
+            addDeliveryEndPoint(entry.getKey(),((ClusterDeliveryCallback)dcb).getState());
+            pendings.put(seqid, msg);
         }
         entry.getKey().send(msg.msg, dcb);
         return entry.getKey();
     }
-
+    /* modified by liuyao -->*/
     public void sendSubscriptionEvent(PubSubResponse resp) {
         List<Entry<DeliveryEndPoint, DeliveryState>> eps;
         synchronized (endpoints) {

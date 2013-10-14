@@ -54,6 +54,7 @@ import org.apache.hedwig.server.common.ServerConfiguration;
 import org.apache.hedwig.server.common.UnexpectedError;
 import org.apache.hedwig.server.delivery.ClusterDeliveryEndPoint.DeliveredMessage;
 import org.apache.hedwig.server.delivery.ClusterDeliveryEndPoint.DeliveryState;
+import org.apache.hedwig.server.delivery.FIFODeliveryManager.ClusterSubscriber.ResendCheckRequest;
 import org.apache.hedwig.server.handlers.SubscriptionChannelManager.SubChannelDisconnectedListener;
 import org.apache.hedwig.server.netty.ServerStats;
 import org.apache.hedwig.server.persistence.CancelScanRequest;
@@ -383,6 +384,8 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
             StartServingClusterSubscriberRequest request = new StartServingClusterSubscriberRequest(subscriber,
                     endPoint);
             enqueueWithoutFailure(topic, request);
+            ResendCheckRequest resendcheckrequest=subscriber.new ResendCheckRequest();//ly
+            enqueueWithoutFailure(topic, resendcheckrequest);//ly
         } else {
             SimpleSubscriber subscriber = new SimpleSubscriber(topic, subscriberId, preferences,
                     seqIdToStartFrom.getLocalComponent() - 1, endPoint, filter, messageWindowSize, callback, ctx);
@@ -529,7 +532,7 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
         @Override
 		public void deliverNextMessage() {                                    
 			// TODO Auto-generated method stub
-        	checkTimeOut();
+        	//checkTimeOut();
 			super.deliverNextMessage();
 		}
         /* modified by liuyao -->*/
@@ -561,6 +564,33 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
 				clusterEP.closeAndTimeOutRedeliver(ep,msgs);
 			}
 		}
+        public class ResendCheckRequest implements DeliveryManagerRequest{
+
+			@Override
+			public void performRequest() {
+				// TODO Auto-generated method stub
+				new Thread(){
+
+					@Override
+					public void run() {
+						// TODO Auto-generated method stub
+						while(true){
+							//System.out.println("enter timeout check.................");
+							//checkTimeOut();
+							checkExpiredMessages(System.currentTimeMillis());
+							try {
+								TimeUnit.SECONDS.sleep(5);
+							} catch (InterruptedException e) {
+								// TODO Auto-generated catch block
+								e.printStackTrace();
+							}
+						}
+								
+					}
+				}.start();
+			}
+        	
+        }
         /* added by liuyao -->*/
         public ClusterSubscriber(ByteString topic, ByteString subscriberId, SubscriptionPreferences preferences,
                 long lastLocalSeqIdDelivered, ClusterDeliveryEndPoint deliveryEndPoint, ServerMessageFilter filter,

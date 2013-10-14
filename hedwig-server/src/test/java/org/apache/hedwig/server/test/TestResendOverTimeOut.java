@@ -285,7 +285,7 @@ public class TestResendOverTimeOut extends HedwigHubTestBase {
                 try {
                 	//TimeUnit.SECONDS.sleep(1);
 					//subscriber.consume(topic, subscriberId, msg.getMsgId());
-					if (numMessages+6 == numReceived.incrementAndGet()){
+					if (numMessages+16 == numReceived.incrementAndGet()){
 						subscriber.stopDelivery(topic, subscriberId);
 						receiveLatch.countDown();
 					}
@@ -312,7 +312,7 @@ public class TestResendOverTimeOut extends HedwigHubTestBase {
 //                     numMessages, numReceived.get());
         long end=System.currentTimeMillis();
         System.out.println("receive cost:................... "+(end-start));
-        //TimeUnit.SECONDS.sleep(60*60);
+        TimeUnit.SECONDS.sleep(10);
         subscriber.closeSubscription(topic, subid);
         client.close();
     }

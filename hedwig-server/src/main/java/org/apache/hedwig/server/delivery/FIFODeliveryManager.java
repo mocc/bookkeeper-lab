@@ -525,7 +525,7 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
     	private final ClusterDeliveryEndPoint clusterEP;
     	 /*<-- modified by liuyao*/
     	final long timeOut = 5000;                                            
-		AtomicLong lastCheckTime = new AtomicLong(System.currentTimeMillis());
+		Long lastCheckTime = System.currentTimeMillis();
         @Override
 		public void deliverNextMessage() {                                    
 			// TODO Auto-generated method stub
@@ -536,9 +536,9 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
         /*<-- added by liuyao*/
         public void checkTimeOut() {                                         
 			long now = System.currentTimeMillis();
-			if (now - timeOut > lastCheckTime.get()) {
+			if (now - timeOut > lastCheckTime) {
 				checkExpiredMessages(now);
-				lastCheckTime.set(now);
+				lastCheckTime=now;
 			}
 		}
         private void checkExpiredMessages(long currentTime) {                 

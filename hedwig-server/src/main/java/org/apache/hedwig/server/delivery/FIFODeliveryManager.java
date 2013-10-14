@@ -553,23 +553,16 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
 					continue;
 				// No sync, but catch the exception, because remove could be
 				// executed in other thread
-				long seq=state.msgs.getFirst();
-				DeliveredMessage msg=clusterEP.pendings.get(seq);
-				if (currentTime - msg.lastDeliveredTime < timeOut) {	
-					continue;
-				}
-				logger.info("msgseq " + seq + " timeout...............");
-				clusterEP.closeAndRedeliver(ep, state);
-//				for(long seq:state.msgs){
-//					
-//					DeliveredMessage msg=clusterEP.pendings.get(seq);
-//					if (currentTime - msg.lastDeliveredTime < timeOut) {	
-//						continue;
-//					}
-//					logger.info("msgseq " + seq + " timeout...............");
-//					clusterEP.closeAndRedeliver(ep, state);
-//					break;
-//				}				
+				for(long seq:state.msgs){
+					
+					DeliveredMessage msg=clusterEP.pendings.get(seq);
+					if (currentTime - msg.lastDeliveredTime < timeOut) {	
+						continue;
+					}
+					logger.info("msgseq " + seq + " timeout...............");
+					clusterEP.closeAndRedeliver(ep, state);
+					break;
+				}				
 				//return;
 
 			}

@@ -22,7 +22,6 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.Set;
@@ -46,7 +45,7 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
     final ScheduledExecutorService scheduler;
 
     static class DeliveryState {
-        LinkedList<Long> msgs = new LinkedList<Long>();
+        SortedSet<Long> msgs = new TreeSet<Long>();
     }
 
     class DeliveredMessage {

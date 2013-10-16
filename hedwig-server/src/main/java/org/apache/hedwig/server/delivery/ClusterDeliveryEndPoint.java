@@ -2,7 +2,9 @@ package org.apache.hedwig.server.delivery;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map.Entry;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
@@ -179,7 +181,7 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
 
     }
     /* added by liuyao -->*/
-    public ClusterDeliveryEndPoint(String label, ScheduledExecutorService scheduler) {
+   
 
     /*
      * modified by hrq.

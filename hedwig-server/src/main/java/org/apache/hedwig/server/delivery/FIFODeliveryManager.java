@@ -793,7 +793,7 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
             // we don't increment topic access times, so the topic would be
             // evicted
             // in future.
-            tm.incrementTopicAccessTimes(topic);// 这里为什么要这么做？？
+            tm.incrementTopicAccessTimes(topic);
 
             if (!filter.testMessage(message)) {
                 messageConsumed(message.getMsgId().getLocalComponent());

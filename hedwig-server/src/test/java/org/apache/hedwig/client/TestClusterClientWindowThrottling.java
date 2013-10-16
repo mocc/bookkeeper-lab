@@ -374,7 +374,7 @@ public class TestClusterClientWindowThrottling extends PubSubServerStandAloneTes
         final Map<String, MessageSeqId> publishedMsgs = new HashMap<String, MessageSeqId>();
 
         final AtomicInteger numReceived = new AtomicInteger(0);
-        final CountDownLatch receiveLatch = new CountDownLatch(1);
+        // final CountDownLatch receiveLatch = new CountDownLatch(1);
 
         final Map<String, MessageSeqId> receivedMsgs1 = new HashMap<String, MessageSeqId>();
         final Map<String, MessageSeqId> receivedMsgs2 = new HashMap<String, MessageSeqId>();
@@ -404,9 +404,9 @@ public class TestClusterClientWindowThrottling extends PubSubServerStandAloneTes
                 receivedMsgs1.put(str, msg.getMsgId());
                 logger.debug(str + " received.");
                 receivedMsgs.putIfAbsent(str, msg.getMsgId());
-                if (clusterWindowSize == numReceived.incrementAndGet()) {
-                    receiveLatch.countDown();
-                }
+                // if (clusterWindowSize == numReceived.incrementAndGet()) {
+                // receiveLatch.countDown();
+                // }
                 callback.operationFinished(context, null);
             }
         });
@@ -421,9 +421,9 @@ public class TestClusterClientWindowThrottling extends PubSubServerStandAloneTes
                 receivedMsgs2.put(str, msg.getMsgId());
                 logger.debug(str + " received.");
                 receivedMsgs.putIfAbsent(str, msg.getMsgId());
-                if (clusterWindowSize == numReceived.incrementAndGet()) {
-                    receiveLatch.countDown();
-                }
+                // if (clusterWindowSize == numReceived.incrementAndGet()) {
+                // receiveLatch.countDown();
+                // }
                 callback.operationFinished(context, null);
             }
         });
@@ -438,9 +438,9 @@ public class TestClusterClientWindowThrottling extends PubSubServerStandAloneTes
                 receivedMsgs3.put(str, msg.getMsgId());
                 logger.debug(str + " received.");
                 receivedMsgs.putIfAbsent(str, msg.getMsgId());
-                if (clusterWindowSize == numReceived.incrementAndGet()) {
-                    receiveLatch.countDown();
-                }
+                // if (clusterWindowSize == numReceived.incrementAndGet()) {
+                // receiveLatch.countDown();
+                // }
                 callback.operationFinished(context, null);
 
             }
@@ -470,7 +470,9 @@ public class TestClusterClientWindowThrottling extends PubSubServerStandAloneTes
         assertEquals("Should be expected " + numMessages + " publishes.", numMessages, numPublished.get());
         assertEquals("Should be expected " + numMessages + " publish responses.", numMessages, publishedMsgs.size());
 
-        assertTrue("Timed out waiting on callback for messages.", receiveLatch.await(10, TimeUnit.SECONDS));
+        // assertTrue("Timed out waiting on callback for messages.",
+        // receiveLatch.await(10, TimeUnit.SECONDS));
+        Thread.sleep(10000);
         assertEquals("client1 Should be expected " + clientWindowSize1 + " messages received.", clientWindowSize1,
                 receivedMsgs1.size());
         assertEquals("client2 Should be expected " + clientWindowSize2 + " messages received.", clientWindowSize2,
@@ -503,7 +505,7 @@ public class TestClusterClientWindowThrottling extends PubSubServerStandAloneTes
         subscriber2 = client2.getSubscriber();
         subscriber3 = client3.getSubscriber();
 
-        ByteString topic = ByteString.copyFromUtf8("testClusterClientWindowWithRedelivery");
+        ByteString topic = ByteString.copyFromUtf8("testRedelivery");
         ByteString subscriberId = ByteString.copyFromUtf8("mysubid");
 
         final String prefix = "message";
@@ -625,7 +627,8 @@ public class TestClusterClientWindowThrottling extends PubSubServerStandAloneTes
         assertTrue("Timed out waiting on callback for publish requests.", publishLatch.await(10, TimeUnit.SECONDS));
         assertEquals("Should be expected " + numMessages + " publishes.", numMessages, numPublished.get());
         assertEquals("Should be expected " + numMessages + " publish responses.", numMessages, publishedMsgs.size());
-        subscriber1.closeSubscription(topic, subscriberId);
+        // subscriber1.closeSubscription(topic, subscriberId);
+        client1.close();
         Thread.sleep(10000);
         // subscriber2.stopDelivery(topic, subscriberId);
 

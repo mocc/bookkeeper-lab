@@ -1,51 +1,48 @@
-/**
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
 package org.apache.hedwig.server.delivery;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
-import java.util.Iterator;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map.Entry;
 import java.util.Set;
 import java.util.SortedSet;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.bookkeeper.util.MathUtils;
 import org.apache.hedwig.protocol.PubSubProtocol.PubSubResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPolicy {
+    private static final Logger logger = LoggerFactory.getLogger(ClusterDeliveryEndPoint.class);
 
     volatile boolean closed = false;
     final ReentrantReadWriteLock closeLock = new ReentrantReadWriteLock();
-    final LinkedHashMap<DeliveryEndPoint, DeliveryState> endpoints =
-            new LinkedHashMap<DeliveryEndPoint, DeliveryState>();
-    final HashMap<Long, DeliveredMessage> pendings = new HashMap<Long, DeliveredMessage>();
+
+    // endpoints store all clients' deliveryEndPoints which are not throttled
+    final ConcurrentHashMap<DeliveryEndPoint, DeliveryState> endpoints = new ConcurrentHashMap<DeliveryEndPoint, DeliveryState>();
+    final ConcurrentHashMap<Long, DeliveredMessage> pendings = new ConcurrentHashMap<Long, DeliveredMessage>();
+    final LinkedBlockingQueue<DeliveryEndPoint> deliverableEP = new LinkedBlockingQueue<DeliveryEndPoint>();
+    final ConcurrentLinkedQueue<DeliveryEndPoint> throttledEP = new ConcurrentLinkedQueue<DeliveryEndPoint>();
+
     final String label;
-    final int messageWindowSize;
     final ScheduledExecutorService scheduler;
 
+    /*
+     * modified by hrq.
+     */
     static class DeliveryState {
         SortedSet<Long> msgs = new TreeSet<Long>();
+        int messageWindowSize; // this is a message window size for every client
+
+        public DeliveryState(int messageWindowSize) {
+            this.messageWindowSize = messageWindowSize;
+        }
     }
 
     class DeliveredMessage {
@@ -83,6 +80,7 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
             this.state = state;
             this.msg = msg;
             this.deliveredTime = msg.lastDeliveredTime;
+
             // add this msgs to current delivery endpoint state
             this.state.msgs.add(msg.msg.getMessage().getMsgId().getLocalComponent());
         }
@@ -106,6 +104,9 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
 
     };
 
+    /*
+     * modified by hrq.
+     */
     class RedeliveryTask implements Runnable {
 
         final DeliveryState state;
@@ -125,18 +126,18 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
                 closeLock.readLock().unlock();
             }
             Set<DeliveredMessage> msgs = new HashSet<DeliveredMessage>();
-            synchronized (endpoints) {
-                for (long seqid : state.msgs) {
-                    DeliveredMessage msg = pendings.get(seqid);
-                    if (null != msg) {
-                        msgs.add(msg);
-                    }
+
+            for (long seqid : state.msgs) {
+                DeliveredMessage msg = pendings.get(seqid);
+                if (null != msg) {
+                    msgs.add(msg);
                 }
             }
+
             for (DeliveredMessage msg : msgs) {
                 DeliveryEndPoint ep = send(msg);
                 if (null == ep) {
-                    // no delivery channel found
+                    // no delivery channel in endpoints
                     ClusterDeliveryEndPoint.this.close();
                     return;
                 }
@@ -146,6 +147,7 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
     }
     /*<-- added by liuyao*/
     class TimeOutRedeliveryTask implements Runnable {
+
 
         //final DeliveryState state;
     	final Set<DeliveredMessage> msgs;
@@ -177,14 +179,22 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
 
     }
     /* added by liuyao -->*/
-    public ClusterDeliveryEndPoint(String label, int messageWindowSize, ScheduledExecutorService scheduler) {
+    public ClusterDeliveryEndPoint(String label, ScheduledExecutorService scheduler) {
+
+    /*
+     * modified by hrq.
+     */
+    public ClusterDeliveryEndPoint(String label, ScheduledExecutorService scheduler) {
+
         this.label = label;
-        this.messageWindowSize = messageWindowSize;
         this.scheduler = scheduler;
     }
 
-    public void addDeliveryEndPoint(DeliveryEndPoint endPoint) {
-        addDeliveryEndPoint(endPoint, new DeliveryState());
+    /*
+     * modified by hrq.
+     */
+    public void addDeliveryEndPoint(DeliveryEndPoint channelEP, int messageWindowSize) {
+        addDeliveryEndPoint(channelEP, new DeliveryState(messageWindowSize));
     }
 
     private void addDeliveryEndPoint(DeliveryEndPoint endPoint, DeliveryState state) {
@@ -193,9 +203,8 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
             if (closed) {
                 return;
             }
-            synchronized (endpoints) {
-                endpoints.put(endPoint, state);
-            }
+            deliverableEP.add(endPoint);
+            endpoints.put(endPoint, state);
         } finally {
             closeLock.readLock().unlock();
         }
@@ -207,12 +216,19 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
             if (closed) {
                 return;
             }
+            if (null == state) {
+                return;
+            }
+            if (state.msgs.isEmpty()) {
+                return;
+            }
             // redeliver the state
             scheduler.submit(new RedeliveryTask(state));
         } finally {
             closeLock.readLock().unlock();
         }
     }
+
     /*<-- added by liuyao*/
     public void closeAndTimeOutRedeliver(DeliveryEndPoint ep,Set<DeliveredMessage> msgs){
     	System.out.println("begin redeliver.................");
@@ -228,16 +244,33 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
         }
     }
     /* added by liuyao -->*/
+
+
+    /*
+     * modified by hrq.
+     */
+
     public void removeDeliveryEndPoint(DeliveryEndPoint endPoint) {
-        DeliveryState state;
-        synchronized (endpoints) {
-            state = endpoints.remove(endPoint);
+        synchronized (deliverableEP) {
+            if (deliverableEP.contains(endPoint)) {
+                deliverableEP.remove(endPoint);
+            } else
+                throttledEP.remove(endPoint);
+        }
+
+        DeliveryState state = endpoints.remove(endPoint);
+        if (endpoints.isEmpty()) {
+            close();
         }
         if (null == state) {
             return;
         }
+        if (state.msgs.isEmpty()) {
+            return;
+        }
         closeAndRedeliver(endPoint, state);
     }
+
 
     // the caller should synchronize
     private Entry<DeliveryEndPoint, DeliveryState> pollDeliveryEndPoint() {
@@ -252,32 +285,43 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
         }
     }
 
+
+
     public boolean hasAvailableDeliveryEndPoints() {
-        synchronized (endpoints) {
-            return !endpoints.isEmpty();
-        }
+        return !deliverableEP.isEmpty();
     }
 
+    /*
+     * modified by hrq
+     */
     @Override
     public boolean messageConsumed(long newSeqIdConsumed) {
         DeliveredMessage msg;
-        synchronized (endpoints) {
-            msg = pendings.remove(newSeqIdConsumed);
-            if (null != msg && null != msg.lastDeliveredEP) {
-                DeliveryState state = endpoints.get(msg.lastDeliveredEP);
-                if (null != state) {
-                    state.msgs.remove(newSeqIdConsumed);
-                }
+
+        msg = pendings.remove(newSeqIdConsumed);
+        DeliveryEndPoint lastDeliveredEP = msg.lastDeliveredEP;
+
+        if (null != msg && null != lastDeliveredEP) {
+
+            DeliveryState state = endpoints.get(lastDeliveredEP);
+            if (state != null) {
+                state.msgs.remove(newSeqIdConsumed);
+            }
+            if (throttledEP.contains(lastDeliveredEP)) {
+                throttledEP.remove(lastDeliveredEP);
+                deliverableEP.offer(lastDeliveredEP);
+                return true;
             }
         }
-        return null != msg;
+        return false;
     }
 
+    /*
+     * modified by hrq
+     */
     @Override
     public boolean shouldThrottle(long lastSeqIdDelivered) {
-        synchronized (endpoints) {
-            return pendings.size() >= messageWindowSize;
-        }
+        return deliverableEP.isEmpty();
     }
 
     @Override
@@ -288,6 +332,7 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
                 callback.permanentErrorOnSend();
                 return;
             }
+
             DeliveryEndPoint ep = send(new DeliveredMessage(response));
             if (null == ep) {
                 // no delivery endpoint
@@ -298,36 +343,81 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
             	//System.out.println("ep is not null...................");
                 callback.sendingFinished();
             }
+
         } finally {
             closeLock.readLock().unlock();
         }
+        DeliveryEndPoint ep = send(new DeliveredMessage(response));
+        if (null == ep) {
+            // no delivery endpoint in cluster
+            callback.permanentErrorOnSend();
+        } else {
+            // callback after sending the message
+            callback.sendingFinished();
+        }
     }
+
     /*<-- modified by liuyao*/
+
+
+    /*
+     * modified by hrq.
+     */
+
     private DeliveryEndPoint send(final DeliveredMessage msg) {
+
         Entry<DeliveryEndPoint, DeliveryState> entry ;
+
+
+
         DeliveryCallback dcb;
-        synchronized (endpoints) {
-        	entry = pollDeliveryEndPoint(); 
-            if (null == entry) {
-                return null;
+
+        DeliveryEndPoint clusterEP = null;
+        while (!endpoints.isEmpty()) {
+            try {
+                clusterEP = deliverableEP.poll(1, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+                Thread.currentThread().interrupt();
+
             }
-            dcb = new ClusterDeliveryCallback(entry.getKey(), entry.getValue(), msg);
+            if (null == clusterEP) {
+                continue;
+            }
+
+            DeliveryState state = endpoints.get(clusterEP);
+            dcb = new ClusterDeliveryCallback(clusterEP, state, msg);
             long seqid = msg.msg.getMessage().getMsgId().getLocalComponent();
-            msg.resetDeliveredTime(entry.getKey());
-            addDeliveryEndPoint(entry.getKey(),((ClusterDeliveryCallback)dcb).getState());
+
+            msg.resetDeliveredTime(clusterEP);
             pendings.put(seqid, msg);
+
+            // check whether this deliveryEndpoint should be throttled,
+            if (state.msgs.size() < state.messageWindowSize)
+                deliverableEP.offer(clusterEP);
+            else
+                throttledEP.offer(clusterEP);
+
+            clusterEP.send(msg.msg, dcb);
+            // if this operation fails, trigger redelivery of this message.
+            return clusterEP;
+
         }
-        entry.getKey().send(msg.msg, dcb);
-        return entry.getKey();
+        return null;
+
     }
-    /* modified by liuyao -->*/
+
+
+    /*
+     * modified by hrq
+     */
+
     public void sendSubscriptionEvent(PubSubResponse resp) {
-        List<Entry<DeliveryEndPoint, DeliveryState>> eps;
-        synchronized (endpoints) {
-            eps = new ArrayList<Entry<DeliveryEndPoint, DeliveryState>>(endpoints.entrySet());
-        }
-        for (final Entry<DeliveryEndPoint, DeliveryState> entry : eps) {
-            entry.getKey().send(resp, new DeliveryCallback() {
+        List<DeliveryEndPoint> eps = new ArrayList<DeliveryEndPoint>(deliverableEP);
+        eps.addAll(throttledEP);
+
+        for (final DeliveryEndPoint clusterEP : eps) {
+            clusterEP.send(resp, new DeliveryCallback() {
 
                 @Override
                 public void sendingFinished() {
@@ -336,12 +426,12 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
 
                 @Override
                 public void transientErrorOnSend() {
-                    closeAndRedeliver(entry.getKey(), entry.getValue());
+                    closeAndRedeliver(clusterEP, endpoints.get(clusterEP));
                 }
 
                 @Override
                 public void permanentErrorOnSend() {
-                    closeAndRedeliver(entry.getKey(), entry.getValue());
+                    closeAndRedeliver(clusterEP, endpoints.get(clusterEP));
                 }
 
             });

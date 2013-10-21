@@ -535,25 +535,34 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
 		
         private void checkExpiredMessages(long currentTime) {                 
         	Set<DeliveredMessage> msgs = new HashSet<DeliveredMessage>();
-			for (DeliveryEndPoint ep : clusterEP.endpoints.keySet()) {
-				DeliveryState state = clusterEP.endpoints.get(ep);
-				if (state.msgs.isEmpty()){
-					//System.out.println("state.msgs is  null...............");
+			for (Long seq : clusterEP.pendings.keySet()) {
+				DeliveredMessage msg = clusterEP.pendings.get(seq);	
+				if (currentTime - msg.lastDeliveredTime < timeOut) {	
 					continue;
 				}
-				// No sync, but catch the exception, because remove could be
-				// executed in other thread
-				for(long seq:state.msgs){
-					
-					DeliveredMessage msg=clusterEP.pendings.get(seq);
-					if (currentTime - msg.lastDeliveredTime < timeOut) {	
-						continue;
-					}
-					if (null != msg)msgs.add(msg);      
-					logger.info("msgseq " + seq + " timeout...............");
-				}	
-				clusterEP.closeAndTimeOutRedeliver(ep,msgs);
+				if (null != msg)msgs.add(msg);      
+				logger.info("msgseq " + seq + " timeout...............");	
 			}
+			clusterEP.closeAndTimeOutRedeliver(msgs);
+//			for (DeliveryEndPoint ep : clusterEP.endpoints.keySet()) {
+//				DeliveryState state = clusterEP.endpoints.get(ep);
+//				if (state.msgs.isEmpty()){
+//					//System.out.println("state.msgs is  null...............");
+//					continue;
+//				}
+//				// No sync, but catch the exception, because remove could be
+//				// executed in other thread
+//				for(long seq:state.msgs){
+//					
+//					DeliveredMessage msg=clusterEP.pendings.get(seq);
+//					if (currentTime - msg.lastDeliveredTime < timeOut) {	
+//						continue;
+//					}
+//					if (null != msg)msgs.add(msg);      
+//					logger.info("msgseq " + seq + " timeout...............");
+//				}	
+//				clusterEP.closeAndTimeOutRedeliver(ep,msgs);
+//			}
 		}
         public class ResendCheckRequest implements DeliveryManagerRequest{
 

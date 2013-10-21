@@ -250,6 +250,20 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
             closeLock.readLock().unlock();
         }
     }
+    public void closeAndTimeOutRedeliver(Set<DeliveredMessage> msgs){
+    	//System.out.println("begin redeliver.................");
+    	closeLock.readLock().lock();
+        try {
+            if (closed) {
+            	//System.out.println("actually close........");
+                return;
+            }
+            // redeliver the state
+            scheduler.submit(new TimeOutRedeliveryTask(msgs));
+        } finally {
+            closeLock.readLock().unlock();
+        }
+    }
     /* added by liuyao -->*/
 
 

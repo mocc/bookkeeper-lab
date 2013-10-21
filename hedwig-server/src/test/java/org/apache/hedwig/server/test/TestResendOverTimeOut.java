@@ -273,7 +273,7 @@ public class TestResendOverTimeOut extends HedwigHubTestBase {
             }, null);
             TimeUnit.SECONDS.sleep(1);
         }
-        TimeUnit.SECONDS.sleep(5);
+        //TimeUnit.SECONDS.sleep(5);
         subscriber.startDelivery(topic, subid, new MessageHandler() {
             synchronized public void deliver(ByteString topic, ByteString subscriberId,
                                              Message msg, Callback<Void> callback,
@@ -284,8 +284,8 @@ public class TestResendOverTimeOut extends HedwigHubTestBase {
                 LOG.info("local fetch message:"+str+"count=="+count);
                 try {
                 	//TimeUnit.SECONDS.sleep(1);
-					//subscriber.consume(topic, subscriberId, msg.getMsgId());
-					if (numMessages+16 == numReceived.incrementAndGet()){
+					if(msg.getMsgId().getLocalComponent()==10)subscriber.consume(topic, subscriberId, msg.getMsgId());
+					if (numMessages+20 == numReceived.incrementAndGet()){
 						subscriber.stopDelivery(topic, subscriberId);
 						receiveLatch.countDown();
 					}
@@ -312,7 +312,7 @@ public class TestResendOverTimeOut extends HedwigHubTestBase {
 //                     numMessages, numReceived.get());
         long end=System.currentTimeMillis();
         System.out.println("receive cost:................... "+(end-start));
-        TimeUnit.SECONDS.sleep(10);
+        TimeUnit.SECONDS.sleep(20);
         subscriber.closeSubscription(topic, subid);
         client.close();
     }

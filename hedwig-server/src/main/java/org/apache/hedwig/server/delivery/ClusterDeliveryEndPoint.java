@@ -161,16 +161,20 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
         @Override
         public void run() {
             closeLock.readLock().lock();
+            //System.out.println("resend run.............");
             try {
                 if (closed) {
+                	//System.out.println("actually close........");
                     return;
                 }
             } finally {
                 closeLock.readLock().unlock();
             }
-   
+            //System.out.println("resend run1............."+msgs.size());
             for (DeliveredMessage msg : msgs) {
+            	//System.out.println("enter sending msg loop...............");
                 DeliveryEndPoint ep = send(msg);
+                //System.out.println("sending process.............");
                 if (null == ep) {
                     // no delivery channel found
                     ClusterDeliveryEndPoint.this.close();
@@ -233,10 +237,11 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
 
     /*<-- added by liuyao*/
     public void closeAndTimeOutRedeliver(DeliveryEndPoint ep,Set<DeliveredMessage> msgs){
-    	System.out.println("begin redeliver.................");
+    	//System.out.println("begin redeliver.................");
     	closeLock.readLock().lock();
         try {
             if (closed) {
+            	//System.out.println("actually close........");
                 return;
             }
             // redeliver the state
@@ -277,7 +282,6 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
     // the caller should synchronize
     private Entry<DeliveryEndPoint, DeliveryState> pollDeliveryEndPoint() {
         if (endpoints.isEmpty()) {
-        	System.out.println("endpoints is empty.................");
             return null;
         } else {
             Iterator<Entry<DeliveryEndPoint, DeliveryState>> iter = endpoints.entrySet().iterator();
@@ -338,24 +342,14 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
             DeliveryEndPoint ep = send(new DeliveredMessage(response));
             if (null == ep) {
                 // no delivery endpoint
-            	//System.out.println("ep is null...................");
                 callback.permanentErrorOnSend();
             } else {
                 // callback after sending the message
-            	//System.out.println("ep is not null...................");
                 callback.sendingFinished();
             }
 
         } finally {
             closeLock.readLock().unlock();
-        }
-        DeliveryEndPoint ep = send(new DeliveredMessage(response));
-        if (null == ep) {
-            // no delivery endpoint in cluster
-            callback.permanentErrorOnSend();
-        } else {
-            // callback after sending the message
-            callback.sendingFinished();
         }
     }
 
@@ -375,7 +369,9 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
         DeliveryCallback dcb;
 
         DeliveryEndPoint clusterEP = null;
+        //System.out.println(endpoints.size()+".....................");
         while (!endpoints.isEmpty()) {
+        	//System.out.println("while loop");
             try {
                 clusterEP = deliverableEP.poll(1, TimeUnit.SECONDS);
             } catch (InterruptedException e) {
@@ -384,27 +380,33 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
 
             }
             if (null == clusterEP) {
+            	//System.out.println("clusterEP is null.................");
                 continue;
             }
-
             DeliveryState state = endpoints.get(clusterEP);
-            dcb = new ClusterDeliveryCallback(clusterEP, state, msg);
-            long seqid = msg.msg.getMessage().getMsgId().getLocalComponent();
-
+            
             msg.resetDeliveredTime(clusterEP);
+            dcb = new ClusterDeliveryCallback(clusterEP, state, msg);
+            
+            long seqid = msg.msg.getMessage().getMsgId().getLocalComponent();
             pendings.put(seqid, msg);
 
             // check whether this deliveryEndpoint should be throttled,
-            if (state.msgs.size() < state.messageWindowSize)
+            if (state.msgs.size() < state.messageWindowSize){
                 deliverableEP.offer(clusterEP);
-            else
+                //System.out.println("deliverableEP.size"+deliverableEP.size()+"................");
+            }
+            else{
                 throttledEP.offer(clusterEP);
+                //System.out.println("throttledEP.size"+throttledEP.size()+"................");
+            }
 
             clusterEP.send(msg.msg, dcb);
             // if this operation fails, trigger redelivery of this message.
             return clusterEP;
 
         }
+        //System.out.println("exit while check...");
         return null;
 
     }

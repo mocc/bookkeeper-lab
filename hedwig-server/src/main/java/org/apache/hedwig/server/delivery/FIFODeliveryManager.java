@@ -21,7 +21,6 @@ import static org.apache.hedwig.util.VarArgs.va;
 
 import java.util.Comparator;
 import java.util.HashSet;
-import java.util.NoSuchElementException;
 import java.util.Queue;
 import java.util.Set;
 import java.util.SortedMap;
@@ -34,7 +33,6 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.PriorityBlockingQueue;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 import org.apache.bookkeeper.util.MathUtils;
@@ -531,30 +529,18 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
 
     class ClusterSubscriber extends ActiveSubscriberState {
     	private final ClusterDeliveryEndPoint clusterEP;
-    	 /*<-- modified by liuyao*/
+    	 /*<-- added by liuyao*/
     	final long timeOut = 5000;                                            
 		Long lastCheckTime = System.currentTimeMillis();
-        @Override
-		public void deliverNextMessage() {                                    
-			// TODO Auto-generated method stub
-        	//checkTimeOut();
-			super.deliverNextMessage();
-		}
-        /* modified by liuyao -->*/
-        /*<-- added by liuyao*/
-        public void checkTimeOut() {                                         
-			long now = System.currentTimeMillis();
-			if (now - timeOut > lastCheckTime) {
-				checkExpiredMessages(now);
-				lastCheckTime=now;
-			}
-		}
+		
         private void checkExpiredMessages(long currentTime) {                 
         	Set<DeliveredMessage> msgs = new HashSet<DeliveredMessage>();
 			for (DeliveryEndPoint ep : clusterEP.endpoints.keySet()) {
 				DeliveryState state = clusterEP.endpoints.get(ep);
-				if (state.msgs.isEmpty())
+				if (state.msgs.isEmpty()){
+					//System.out.println("state.msgs is  null...............");
 					continue;
+				}
 				// No sync, but catch the exception, because remove could be
 				// executed in other thread
 				for(long seq:state.msgs){
@@ -574,17 +560,16 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
 			@Override
 			public void performRequest() {
 				// TODO Auto-generated method stub
-				new Thread(){
+				new Thread("ResendCheckRequest thread"){
 
 					@Override
 					public void run() {
 						// TODO Auto-generated method stub
 						while(true){
-							//System.out.println("enter timeout check.................");
-							//checkTimeOut();
 							checkExpiredMessages(System.currentTimeMillis());
 							try {
 								TimeUnit.SECONDS.sleep(5);
+								//System.out.println("resendCheckThread is working");
 							} catch (InterruptedException e) {
 								// TODO Auto-generated catch block
 								e.printStackTrace();
@@ -1176,7 +1161,6 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
     @Override
     public void onSubChannelDisconnected(TopicSubscriber topicSubscriber, Channel channel) {
 
-    	//System.out.println("onSubChannelDisconnected.............................");
         stopServingSubscriber(topicSubscriber.getTopic(), topicSubscriber.getSubscriberId(),
                 null, new ChannelEndPoint(channel), NOP_CALLBACK, null);
 

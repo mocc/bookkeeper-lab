@@ -229,7 +229,7 @@ public class TestResendOverTimeOut extends HedwigHubTestBase {
         client.close();
     }
     
-    @Test(timeout=60000)
+    @Test(timeout=60000*60)
     public void testResendFunction() throws Exception {
     	
         ByteString topic = ByteString.copyFromUtf8("testAsyncPublishWithResponse");
@@ -285,7 +285,7 @@ public class TestResendOverTimeOut extends HedwigHubTestBase {
                 try {
                 	//TimeUnit.SECONDS.sleep(1);
 					if(msg.getMsgId().getLocalComponent()==10)subscriber.consume(topic, subscriberId, msg.getMsgId());
-					if (numMessages+20 == numReceived.incrementAndGet()){
+					if (numMessages+26 == numReceived.incrementAndGet()){
 						subscriber.stopDelivery(topic, subscriberId);
 						receiveLatch.countDown();
 					}
@@ -299,7 +299,7 @@ public class TestResendOverTimeOut extends HedwigHubTestBase {
         });
         long start1=System.currentTimeMillis();      
         assertTrue("Timed out waiting on callback for publish requests.",
-                   publishLatch.await(100, TimeUnit.SECONDS));
+                   publishLatch.await(100*600, TimeUnit.SECONDS));
         assertEquals("Should be expected " + numMessages + " publishes.",
                      numMessages, numPublished.get()); 
         long end1=System.currentTimeMillis();
@@ -307,12 +307,12 @@ public class TestResendOverTimeOut extends HedwigHubTestBase {
         
         long start=System.currentTimeMillis();
         assertTrue("Timed out waiting on callback for messages.",
-                   receiveLatch.await(100, TimeUnit.SECONDS));
+                   receiveLatch.await(100*600, TimeUnit.SECONDS));
 //        assertEquals("Should be expected " + numMessages + " messages.",
 //                     numMessages, numReceived.get());
         long end=System.currentTimeMillis();
         System.out.println("receive cost:................... "+(end-start));
-        TimeUnit.SECONDS.sleep(20);
+        TimeUnit.SECONDS.sleep(5);
         subscriber.closeSubscription(topic, subid);
         client.close();
     }

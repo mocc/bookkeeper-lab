@@ -52,7 +52,6 @@ import org.apache.hedwig.server.common.ServerConfiguration;
 import org.apache.hedwig.server.common.UnexpectedError;
 import org.apache.hedwig.server.delivery.ClusterDeliveryEndPoint.DeliveredMessage;
 import org.apache.hedwig.server.delivery.ClusterDeliveryEndPoint.DeliveryState;
-import org.apache.hedwig.server.delivery.FIFODeliveryManager.ClusterSubscriber.ResendCheckRequest;
 import org.apache.hedwig.server.handlers.SubscriptionChannelManager.SubChannelDisconnectedListener;
 import org.apache.hedwig.server.netty.ServerStats;
 import org.apache.hedwig.server.persistence.CancelScanRequest;
@@ -114,7 +113,7 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
 
     private class DeliveryWorker implements Runnable {
 
-        BlockingQueue<DeliveryManagerRequest> requestQueue = new LinkedBlockingQueue<DeliveryManagerRequest>();;
+        BlockingQueue<DeliveryManagerRequest> requestQueue = new LinkedBlockingQueue<DeliveryManagerRequest>();
 
         /**
          * The queue of all subscriptions that are facing a transient error
@@ -136,7 +135,7 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
         protected volatile boolean keepRunning = true;
         private final Thread workerThread;
         private final int idx;
-
+        
         private final Object suspensionLock = new Object();
         private boolean suspended = false;
 
@@ -194,7 +193,7 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
-
+                
                 // First retry any subscriptions that had failed and need a
                 // retry
                 retryErroredSubscribers();
@@ -202,6 +201,8 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
                 if (request == null) {
                     continue;
                 }
+               
+                
 
                 request.performRequest();
 
@@ -376,17 +377,26 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
             ClusterDeliveryEndPoint clusterEP = new ClusterDeliveryEndPoint("(topic: " + topic.toStringUtf8()
                     + ", subscriber: " + subscriberId.toStringUtf8() + ")", clusterDeliveryScheduler);
             clusterEP.addDeliveryEndPoint(endPoint, messageWindowSize);
-            ClusterSubscriber subscriber = new ClusterSubscriber(topic, subscriberId, preferences,
+            final ClusterSubscriber subscriber = new ClusterSubscriber(topic, subscriberId, preferences,
                     seqIdToStartFrom.getLocalComponent() - 1, clusterEP, filter, callback, ctx);
             StartServingClusterSubscriberRequest request = new StartServingClusterSubscriberRequest(subscriber,
                     endPoint, messageWindowSize);
             enqueueWithoutFailure(topic, request);
-            ResendCheckRequest resendcheckrequest=subscriber.new ResendCheckRequest();//ly
-            enqueueWithoutFailure(topic, resendcheckrequest);//ly
+            clusterDeliveryScheduler.scheduleAtFixedRate(new Runnable(){
+
+				@Override
+				public void run() {
+					// TODO Auto-generated method stub
+					subscriber.checkExpiredMessages(System.currentTimeMillis());
+				}
+            	
+            }, 0, 5, TimeUnit.SECONDS);
+            
         } else {
             SimpleSubscriber subscriber = new SimpleSubscriber(topic, subscriberId, preferences,
                     seqIdToStartFrom.getLocalComponent() - 1, endPoint, filter, messageWindowSize, callback, ctx);
             enqueueWithoutFailure(topic, subscriber);
+            
         }
     }
 
@@ -544,52 +554,8 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
 				logger.info("msgseq " + seq + " timeout...............");	
 			}
 			clusterEP.closeAndTimeOutRedeliver(msgs);
-//			for (DeliveryEndPoint ep : clusterEP.endpoints.keySet()) {
-//				DeliveryState state = clusterEP.endpoints.get(ep);
-//				if (state.msgs.isEmpty()){
-//					//System.out.println("state.msgs is  null...............");
-//					continue;
-//				}
-//				// No sync, but catch the exception, because remove could be
-//				// executed in other thread
-//				for(long seq:state.msgs){
-//					
-//					DeliveredMessage msg=clusterEP.pendings.get(seq);
-//					if (currentTime - msg.lastDeliveredTime < timeOut) {	
-//						continue;
-//					}
-//					if (null != msg)msgs.add(msg);      
-//					logger.info("msgseq " + seq + " timeout...............");
-//				}	
-//				clusterEP.closeAndTimeOutRedeliver(ep,msgs);
-//			}
 		}
-        public class ResendCheckRequest implements DeliveryManagerRequest{
-
-			@Override
-			public void performRequest() {
-				// TODO Auto-generated method stub
-				new Thread("ResendCheckRequest thread"){
-
-					@Override
-					public void run() {
-						// TODO Auto-generated method stub
-						while(true){
-							checkExpiredMessages(System.currentTimeMillis());
-							try {
-								TimeUnit.SECONDS.sleep(5);
-								//System.out.println("resendCheckThread is working");
-							} catch (InterruptedException e) {
-								// TODO Auto-generated catch block
-								e.printStackTrace();
-							}
-						}
-								
-					}
-				}.start();
-			}
-        	
-        }
+        
         /* added by liuyao -->*/
         public ClusterSubscriber(ByteString topic, ByteString subscriberId, SubscriptionPreferences preferences,
                 long lastLocalSeqIdDelivered, ClusterDeliveryEndPoint deliveryEndPoint, ServerMessageFilter filter,

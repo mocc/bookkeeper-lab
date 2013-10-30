@@ -235,10 +235,12 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
             if (state != null) {
                 state.msgs.remove(newSeqIdConsumed);
             }
-            if (throttledEP.contains(lastDeliveredEP)) {
-                throttledEP.remove(lastDeliveredEP);
-                deliverableEP.offer(lastDeliveredEP);
-                return true;
+            synchronized (deliverableEP) {
+                if (throttledEP.contains(lastDeliveredEP)) {
+                    throttledEP.remove(lastDeliveredEP);
+                    deliverableEP.offer(lastDeliveredEP);
+                    return true;
+                }
             }
         }
         return false;

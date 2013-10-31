@@ -1,0 +1,14 @@
+/.project 
+/.settings
+/bookkeeper-benchmark
+/bookkeeper-server
+/compat-deps
+/hedwig-client/target
+/hedwig-client-jms
+/hedwig-protocol/target
+/hedwig-server/target
+*.project 
+*.classpath
+*.log
+*.prefs
+

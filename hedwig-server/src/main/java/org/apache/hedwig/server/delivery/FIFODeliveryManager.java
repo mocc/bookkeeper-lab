@@ -50,6 +50,7 @@ import org.apache.hedwig.protocol.PubSubProtocol.SubscriptionType;
 import org.apache.hedwig.protoextensions.PubSubResponseUtils;
 import org.apache.hedwig.server.common.ServerConfiguration;
 import org.apache.hedwig.server.common.UnexpectedError;
+import org.apache.hedwig.server.delivery.ClusterDeliveryEndPoint.DeliveredMessage;
 import org.apache.hedwig.server.handlers.SubscriptionChannelManager.SubChannelDisconnectedListener;
 import org.apache.hedwig.server.netty.ServerStats;
 import org.apache.hedwig.server.persistence.CancelScanRequest;
@@ -111,7 +112,7 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
 
     private class DeliveryWorker implements Runnable {
 
-        BlockingQueue<DeliveryManagerRequest> requestQueue = new LinkedBlockingQueue<DeliveryManagerRequest>();;
+        BlockingQueue<DeliveryManagerRequest> requestQueue = new LinkedBlockingQueue<DeliveryManagerRequest>();
 
         /**
          * The queue of all subscriptions that are facing a transient error
@@ -373,15 +374,26 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
             ClusterDeliveryEndPoint clusterEP = new ClusterDeliveryEndPoint("(topic: " + topic.toStringUtf8()
                     + ", subscriber: " + subscriberId.toStringUtf8() + ")", clusterDeliveryScheduler);
             clusterEP.addDeliveryEndPoint(endPoint, messageWindowSize);
-            ClusterSubscriber subscriber = new ClusterSubscriber(topic, subscriberId, preferences,
+            final ClusterSubscriber subscriber = new ClusterSubscriber(topic, subscriberId, preferences,
                     seqIdToStartFrom.getLocalComponent() - 1, clusterEP, filter, callback, ctx);
             StartServingClusterSubscriberRequest request = new StartServingClusterSubscriberRequest(subscriber,
                     endPoint, messageWindowSize);
             enqueueWithoutFailure(topic, request);
+            clusterDeliveryScheduler.scheduleAtFixedRate(new Runnable() {
+
+                @Override
+                public void run() {
+                    // run retry policy for cluster every 5 seconds
+                    subscriber.checkExpiredMessages(System.currentTimeMillis());
+                }
+
+            }, 0, 5, TimeUnit.SECONDS);
+
         } else {
             SimpleSubscriber subscriber = new SimpleSubscriber(topic, subscriberId, preferences,
                     seqIdToStartFrom.getLocalComponent() - 1, endPoint, filter, messageWindowSize, callback, ctx);
             enqueueWithoutFailure(topic, subscriber);
+
         }
     }
 
@@ -507,13 +519,14 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
             // should let subscriber response go first before first delivered
             // message.
             subscriber.cb.operationFinished(subscriber.ctx, (Void) null);
-
             if (curSubscriber != null) {
                 ((ClusterSubscriber) curSubscriber).clusterEP.addDeliveryEndPoint(endpoint, messageWindowSize);
             } else {
                 synchronized (subscriber) {
                     subscriber.lastSeqIdCommunicatedExternally = subscriber.lastLocalSeqIdDelivered;
+
                     addDeliveryPtr(subscriber, subscriber.lastLocalSeqIdDelivered);
+
                 }
                 subscriber.deliverNextMessage();
             }
@@ -522,8 +535,26 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
     }
 
     class ClusterSubscriber extends ActiveSubscriberState {
-
         private final ClusterDeliveryEndPoint clusterEP;
+
+        // time frequency for checking expired unconsumed messages in cluster
+        final long timeOut = 5000;
+        Long lastCheckTime = System.currentTimeMillis();
+
+        // checking expired unconsumed messages in cluster
+        private void checkExpiredMessages(long currentTime) {
+            Set<DeliveredMessage> msgs = new HashSet<DeliveredMessage>();
+            for (Long seq : clusterEP.pendings.keySet()) {
+                DeliveredMessage msg = clusterEP.pendings.get(seq);
+                if (currentTime - msg.lastDeliveredTime < timeOut) {
+                    continue;
+                }
+                if (null != msg)
+                    msgs.add(msg);
+                logger.info("msgseq " + seq + " timeout...............");
+            }
+            clusterEP.closeAndTimeOutRedeliver(msgs);
+        }
 
         public ClusterSubscriber(ByteString topic, ByteString subscriberId, SubscriptionPreferences preferences,
                 long lastLocalSeqIdDelivered, ClusterDeliveryEndPoint deliveryEndPoint, ServerMessageFilter filter,
@@ -531,6 +562,7 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
             super(topic, subscriberId, preferences, lastLocalSeqIdDelivered, deliveryEndPoint, filter,
                     deliveryEndPoint, cb, ctx);
             clusterEP = deliveryEndPoint;
+
         }
 
         @Override
@@ -872,7 +904,10 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
             // the underlying channel is broken, the channel will
             // be closed in UmbrellaHandler when exception happened.
             // so we don't need to close the channel again
+
+            System.out.println("permanentErrorOnSend.............................");
             stopServingSubscriber(topic, subscriberId, null, deliveryEndPoint, NOP_CALLBACK, null);
+
         }
 
         @Override
@@ -1091,8 +1126,10 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
 
     @Override
     public void onSubChannelDisconnected(TopicSubscriber topicSubscriber, Channel channel) {
+
         stopServingSubscriber(topicSubscriber.getTopic(), topicSubscriber.getSubscriberId(), null, new ChannelEndPoint(
                 channel), NOP_CALLBACK, null);
+
     }
 
 }

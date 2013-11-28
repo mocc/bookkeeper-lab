@@ -150,7 +150,7 @@ public class TestFIFODeliveryManager {
                          oplatch.countDown();
                      }
                 }, null);
-        fdm.stopServingSubscriber(topic, subscriber, null,
+        fdm.stopServingSubscriber(topic, subscriber, null,null,
                 new Callback<Void>() {
                      @Override
                      public void operationFinished(Object ctx, Void result) {

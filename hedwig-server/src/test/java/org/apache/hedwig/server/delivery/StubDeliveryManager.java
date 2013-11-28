@@ -64,11 +64,10 @@ public class StubDeliveryManager implements DeliveryManager {
                                                 seqIdToStartFrom, endPoint, filter));
         cb.operationFinished(ctx, null);
     }
-
     @Override
     public void stopServingSubscriber(ByteString topic, ByteString subscriberId,
                                       SubscriptionEvent event,
-                                      Callback<Void> cb, Object ctx) {
+                                      DeliveryEndPoint endPoint,Callback<Void> cb, Object ctx) {
         lastRequest.add(new TopicSubscriber(topic, subscriberId));
         cb.operationFinished(ctx, null);
     }

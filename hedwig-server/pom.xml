@@ -82,7 +82,7 @@
       <scope>compile</scope>
       <type>jar</type>
     </dependency>
-    <dependency>
+      <dependency>
       <groupId>org.apache.bookkeeper</groupId>
       <artifactId>bookkeeper-server</artifactId>
       <version>${project.parent.version}</version>

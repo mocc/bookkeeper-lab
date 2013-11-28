@@ -310,7 +310,9 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
         DeliveredMessage msg;
 
         msg = pendings.remove(newSeqIdConsumed);
-        DeliveryEndPoint lastDeliveredEP = msg.lastDeliveredEP;
+        //DeliveryEndPoint lastDeliveredEP = msg.lastDeliveredEP;
+        DeliveryEndPoint lastDeliveredEP=null;
+        if(null != msg)lastDeliveredEP = msg.lastDeliveredEP;
 
         if (null != msg && null != lastDeliveredEP) {
 

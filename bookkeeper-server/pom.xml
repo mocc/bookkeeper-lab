@@ -196,7 +196,7 @@
       <plugin>
         <artifactId>maven-dependency-plugin</artifactId>
         <executions>
-          <execution>
+          <!--  <execution>
             <phase>package</phase>
             <goals>
               <goal>copy-dependencies</goal>
@@ -205,7 +205,7 @@
               <outputDirectory>${project.libdir}</outputDirectory>
 	      <includeScope>runtime</includeScope>
             </configuration>
-          </execution>
+          </execution>-->
         </executions>
       </plugin>
       <plugin>

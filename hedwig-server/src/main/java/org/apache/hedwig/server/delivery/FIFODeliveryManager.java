@@ -382,15 +382,15 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
             StartServingClusterSubscriberRequest request = new StartServingClusterSubscriberRequest(subscriber,
                     endPoint, messageWindowSize);
             enqueueWithoutFailure(topic, request);
-            clusterDeliveryScheduler.scheduleAtFixedRate(new Runnable(){
-
-				@Override
-				public void run() {
-					// TODO Auto-generated method stub
-					subscriber.checkExpiredMessages(System.currentTimeMillis());
-				}
-            	
-            }, 0, 5, TimeUnit.SECONDS);
+//            clusterDeliveryScheduler.scheduleAtFixedRate(new Runnable(){
+//
+//				@Override
+//				public void run() {
+//					// TODO Auto-generated method stub
+//					subscriber.checkExpiredMessages(System.currentTimeMillis());
+//				}
+//            	
+//            }, 0, 5, TimeUnit.SECONDS);
             
         } else {
             SimpleSubscriber subscriber = new SimpleSubscriber(topic, subscriberId, preferences,

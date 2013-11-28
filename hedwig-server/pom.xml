@@ -82,13 +82,13 @@
       <scope>compile</scope>
       <type>jar</type>
     </dependency>
-      <dependency>
+      <!--  <dependency>
       <groupId>org.apache.bookkeeper</groupId>
       <artifactId>bookkeeper-server</artifactId>
       <version>${project.parent.version}</version>
       <scope>test</scope>
       <type>test-jar</type>
-    </dependency>
+    </dependency>-->
     <!--
         Annoying dependency we need to include because
         zookeeper uses log4j and so we transatively do, but

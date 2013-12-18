@@ -17,6 +17,14 @@
  */
 package org.apache.hedwig.server.handlers;
 
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.PrintWriter;
+import java.util.Iterator;
+import java.util.Set;
+import java.util.Map.Entry;
+import java.util.concurrent.ConcurrentSkipListMap;
+
 import org.apache.hedwig.protocol.PubSubProtocol;
 import org.jboss.netty.channel.Channel;
 import org.apache.bookkeeper.util.MathUtils;
@@ -38,6 +46,11 @@ public class PublishHandler extends BaseHandler {
 
     private PersistenceManager persistenceMgr;
     private final OpStats pubStats;
+    //private PrintWriter pw;
+    private ConcurrentSkipListMap<String,Long> timemap_hub_in=new ConcurrentSkipListMap<String,Long>();
+    static int count=0;
+    static int numMessage=0;
+    boolean isEntered=false;
 
     public PublishHandler(TopicManager topicMgr, PersistenceManager persistenceMgr, ServerConfiguration cfg) {
         super(topicMgr, cfg);
@@ -56,7 +69,36 @@ public class PublishHandler extends BaseHandler {
 
         Message msgToSerialize = Message.newBuilder(request.getPublishRequest().getMsg()).setSrcRegion(
                                      cfg.getMyRegionByteString()).build();
-
+        //pw.write(" message: "+msgToSerialize.getBody().toStringUtf8()+" time_pub:"+item.getValue()+"\r\n")
+        String msg=msgToSerialize.getBody().toStringUtf8();  
+        if(!isEntered  && msg.charAt(0)=='N'){
+        	numMessage=Integer.valueOf(msg.substring(1));
+        	isEntered=true;
+        	//System.out.println("here first........................."+numMessage);
+        	//return;
+        }else{
+        	timemap_hub_in.put(msg, System.currentTimeMillis());
+        	count++;
+        	//System.out.println("hubin count........................."+count+"  "+msg);
+        	if(count==numMessage){
+        		//System.out.println("here ends.........................");
+        		Set<Entry<String, Long>> entryset_hub_in=timemap_hub_in.entrySet();
+                Iterator<Entry<String, Long>> it_hub_in=entryset_hub_in.iterator();
+                PrintWriter pw=null;
+				try {
+					pw = new PrintWriter(new File("D:\\hub_in.txt"));
+				} catch (FileNotFoundException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+                while(it_hub_in.hasNext()){
+                	Entry<String, Long> item=it_hub_in.next();
+                	//System.out.println(" message: "+item.getKey()+" time_hub_in:"+item.getValue());
+                	pw.write(" message:"+item.getKey()+" time_hub_in "+item.getValue()+"\r\n");
+                }
+                pw.close();
+        	}
+        }
         final long requestTime = MathUtils.now();
         PersistRequest persistRequest = new PersistRequest(request.getTopic(), msgToSerialize,
         new Callback<PubSubProtocol.MessageSeqId>() {

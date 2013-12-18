@@ -19,15 +19,21 @@ package org.apache.hedwig.server.delivery;
 
 import static org.apache.hedwig.util.VarArgs.va;
 
+import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.PrintWriter;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Queue;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.TreeMap;
+import java.util.Map.Entry;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.ConcurrentSkipListMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.PriorityBlockingQueue;
@@ -73,6 +79,10 @@ import com.google.protobuf.ByteString;
 public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnectedListener {
 
     protected static final Logger logger = LoggerFactory.getLogger(FIFODeliveryManager.class);
+    private ConcurrentSkipListMap<String,Long> timemap_hub_out=new ConcurrentSkipListMap<String,Long>();
+    static int count=0;
+    static int numMessage=0;
+    boolean isEntered=false;
 
     private static Callback<Void> NOP_CALLBACK = new Callback<Void>() {
         @Override
@@ -848,11 +858,41 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
             PubSubResponse response = PubSubResponse.newBuilder().setProtocolVersion(ProtocolVersion.VERSION_ONE)
                     .setStatusCode(StatusCode.SUCCESS).setTxnId(0).setMessage(message).setTopic(topic)
                     .setSubscriberId(subscriberId).build();
-
+            ////////////////////////
+            String msg=message.getBody().toStringUtf8();
+            if(msg.charAt(0)=='N' && !isEntered){
+            	numMessage=Integer.valueOf(msg.substring(1));
+            	isEntered=true;
+            	//System.out.println("here first........................."+numMessage);
+            	//return;
+            }else{
+            	timemap_hub_out.put(msg, System.currentTimeMillis());
+            	count++;
+            	//System.out.println("here count........................."+count+"  "+msg);
+            	if(count==numMessage){
+            		//System.out.println("here ends.........................");
+            		Set<Entry<String, Long>> entryset_hub_out=timemap_hub_out.entrySet();
+                    Iterator<Entry<String, Long>> it_hub_out=entryset_hub_out.iterator();
+                    PrintWriter pw=null;
+    				try {
+    					pw = new PrintWriter(new File("D:\\hub_out.txt"));
+    				} catch (FileNotFoundException e) {
+    					// TODO Auto-generated catch block
+    					e.printStackTrace();
+    				}
+                    while(it_hub_out.hasNext()){
+                    	Entry<String, Long> item=it_hub_out.next();
+                    	//System.out.println(" message: "+item.getKey()+" time_hub_out:"+item.getValue());
+                    	pw.write(" message:"+item.getKey()+" time_hub_out "+item.getValue()+"\r\n");
+                    }
+                    pw.close();
+            	}
+            }
+            ////////////////////////
             deliveryEndPoint.send(response, //
                     // callback =
                     this);
-
+           
         }
 
         @Override

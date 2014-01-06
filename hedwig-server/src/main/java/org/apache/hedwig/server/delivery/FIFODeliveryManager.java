@@ -413,6 +413,7 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
     @Override
     public void stopServingSubscriber(ByteString topic, ByteString subscriberId, SubscriptionEvent event,
             DeliveryEndPoint endPoint, Callback<Void> cb, Object ctx) {
+    	//System.out.println("enter stopServingSubscriber..................");
         enqueueWithoutFailure(topic, new StopServingSubscriber(topic, subscriberId, event, endPoint, cb, ctx));
     }
 
@@ -525,6 +526,7 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
             ActiveSubscriberState curSubscriber = subscriberStates.get(ts);
             if (null == curSubscriber) {
                 subscriberStates.put(ts, subscriber);
+                System.out.println(subscriberStates+"........................test.......");
             }
 
             // after put the active subscriber in subscriber states mapping
@@ -561,10 +563,10 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
 					continue;
 				}
 				if (null != msg)msgs.add(msg);      
-				logger.info("msgseq " + seq + " timeout...............");	
+				//logger.info("msgseq " + seq + " timeout...............");	
 			}
 			clusterEP.closeAndTimeOutRedeliver(msgs);
-		}
+		}  
         
         /* added by liuyao -->*/
         public ClusterSubscriber(ByteString topic, ByteString subscriberId, SubscriptionPreferences preferences,
@@ -875,7 +877,7 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
                     Iterator<Entry<String, Long>> it_hub_out=entryset_hub_out.iterator();
                     PrintWriter pw=null;
     				try {
-    					pw = new PrintWriter(new File("D:\\hub_out.txt"));
+    					pw = new PrintWriter(new File("./hub_out.txt"));
     				} catch (FileNotFoundException e) {
     					// TODO Auto-generated catch block
     					e.printStackTrace();
@@ -952,8 +954,8 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
             // the underlying channel is broken, the channel will
             // be closed in UmbrellaHandler when exception happened.
             // so we don't need to close the channel again
-
-        	System.out.println("permanentErrorOnSend.............................");
+        	
+        	//System.out.println("permanentErrorOnSend.............................");
             stopServingSubscriber(topic, subscriberId, null, deliveryEndPoint,
                                   NOP_CALLBACK, null);
 
@@ -972,7 +974,7 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
         public void performRequest() {
             // Put this subscriber in the channel to subscriber mapping
             ActiveSubscriberState prevSubscriber = subscriberStates.put(new TopicSubscriber(topic, subscriberId), this);
-
+            //System.out.println(subscriberStates.toString()+".......................");
             // after put the active subscriber in subscriber states mapping
             // trigger the callback to tell it started to deliver the message
             // should let subscriber response go first before first delivered
@@ -1030,7 +1032,14 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
 
         public StopServingSubscriber(ByteString topic, ByteString subscriberId, SubscriptionEvent event,
                 DeliveryEndPoint endPoint, Callback<Void> callback, Object ctx) {
-            this.ts = new TopicSubscriber(topic, subscriberId);
+        	
+        	String sbid=subscriberId.toStringUtf8();
+        	int i=sbid.contains("/")?sbid.indexOf("/"):sbid.length();        	
+        	//sbid.substring(0, i);
+        	//System.out.println(sbid+"hhhhhhhh..............");
+        	this.ts = new TopicSubscriber(topic, ByteString.copyFromUtf8(sbid.substring(0, i)));
+        	//System.out.println(ts.getSubscriberId().toStringUtf8());
+            //System.out.println(ts.toString()+"      howw  ......................"+topic.toStringUtf8()+" ww"+subscriberId.toStringUtf8());
             this.event = event;
             this.endPoint = endPoint;
             this.cb = callback;
@@ -1039,8 +1048,20 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
 
         @Override
         public void performRequest() {
+//        	String sbid=ts.getSubscriberId().toStringUtf8();
+//        	int i=sbid.indexOf('/');
+//       	sbid.substring(0, i);
+//        	System.out.println(sbid+"   hhhhhhhh.............."+i);
+ //       	System.out.println("   hhhhhhhh..............");
+            
+            
             ActiveSubscriberState subscriber = subscriberStates.get(ts);
+            //System.out.println("exec stopServingSubscriber................");
+            //System.out.println(ts.toString()+"       ddhoww  ......................");
+            //System.out.println(subscriberStates.get(ts)+"..........................");
+            //if (null == subscriber) {System.out.println(ts.toString()+"subscriber is null............"+subscriberStates.toString());}
             if (null != subscriber) {
+            	//System.out.println("enter     sub	not nulll...............");
                 if (subscriber instanceof SimpleSubscriber) {
                     if (null == this.endPoint || subscriber.deliveryEndPoint.equals(this.endPoint)) {
                         // it is safe to remove the subscriber when the delivery
@@ -1049,19 +1070,23 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
                         doStopServingSubscriber(subscriber, event);
                     }
                 } else {
+                	//System.out.println("enter      else...............");
                     if (null == this.endPoint) {
+                    	System.out.println("enter      endpoint==null");
                         subscriberStates.remove(ts);
                         doStopServingSubscriber(subscriber, event);
                     } else {
+                    	//System.out.println("enter      here......befor remove.....");
                         // stop specific delivery endpoint
                         ((ClusterDeliveryEndPoint) subscriber.deliveryEndPoint).removeDeliveryEndPoint(endPoint);
                         // we should not close the channel now after enabling
                         // multiplexing
+                        //System.out.println(event.toString()+"...event value");
                         PubSubResponse response = PubSubResponseUtils.getResponseForSubscriptionEvent(subscriber.topic,
                                 subscriber.subscriberId, event);
                         endPoint.send(response, new DeliveryCallback() {
                             @Override
-                            public void sendingFinished() {
+                            public void sendingFinished() {  
                                 // do nothing now
                             }
 
@@ -1175,10 +1200,10 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
 
     @Override
     public void onSubChannelDisconnected(TopicSubscriber topicSubscriber, Channel channel) {
-
+    	//System.out.println("onSubChannelDisconnected...............");
         stopServingSubscriber(topicSubscriber.getTopic(), topicSubscriber.getSubscriberId(),
-                null, new ChannelEndPoint(channel), NOP_CALLBACK, null);
-
+                /*null*/SubscriptionEvent.SUBSCRIPTION_FORCED_CLOSED  , new ChannelEndPoint(channel), NOP_CALLBACK, null);
+        //System.out.println(topicSubscriber.getSubscriberId().toStringUtf8()+"xxxxxxxxxxxxxx");
     }
 
 }

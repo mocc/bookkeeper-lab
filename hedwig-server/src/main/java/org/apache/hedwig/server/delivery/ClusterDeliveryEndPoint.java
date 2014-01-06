@@ -205,6 +205,7 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
                 return;
             }
             deliverableEP.add(endPoint);
+            //System.out.println("add endpoint:::::::::::::"+endPoint);
             endpoints.put(endPoint, state);
         } finally {
             closeLock.readLock().unlock();
@@ -266,6 +267,7 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
         synchronized (deliverableEP) {
             if (deliverableEP.contains(endPoint)) {
                 deliverableEP.remove(endPoint);
+                //System.out.println("deliverableEP:::remove a channel"+endPoint.toString());
             } else
                 throttledEP.remove(endPoint);
         }
@@ -382,6 +384,7 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
         while (!endpoints.isEmpty()) {
             try {
                 clusterEP = deliverableEP.poll(1, TimeUnit.SECONDS);
+                //System.out.println("deliverableEP size::::::::::::::::::::::::"+deliverableEP);
             } catch (InterruptedException e) {
                 e.printStackTrace();
                 Thread.currentThread().interrupt();
@@ -401,12 +404,14 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
             // check whether this deliveryEndpoint should be throttled,
             if (state.msgs.size() < state.messageWindowSize){
                 deliverableEP.offer(clusterEP);
+                
             }
             else{
                 throttledEP.offer(clusterEP);
             }
 
             clusterEP.send(msg.msg, dcb);
+            //System.out.println(clusterEP.toString()+"send:::::::::"+msg.msg.getMessage().getBody().toStringUtf8());
             // if this operation fails, trigger redelivery of this message.
             return clusterEP;
 

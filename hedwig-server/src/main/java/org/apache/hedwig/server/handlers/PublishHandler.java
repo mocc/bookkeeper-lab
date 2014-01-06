@@ -86,7 +86,7 @@ public class PublishHandler extends BaseHandler {
                 Iterator<Entry<String, Long>> it_hub_in=entryset_hub_in.iterator();
                 PrintWriter pw=null;
 				try {
-					pw = new PrintWriter(new File("D:\\hub_in.txt"));
+					pw = new PrintWriter(new File("./hub_in.txt"));
 				} catch (FileNotFoundException e) {
 					// TODO Auto-generated catch block
 					e.printStackTrace();

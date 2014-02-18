@@ -126,7 +126,7 @@ public class TestCluster extends HedwigHubTestBase {
     @Before
     public void setUp() throws Exception {
     	System.out.println("enter setup");  //first construct,then setup
-    	System.setProperty("build.test.dir", "F:\\logDir");
+    	System.setProperty("build.test.dir", "E:\\cloud compute\\eclipse_logdir");
         super.setUp();
     }
     @Override

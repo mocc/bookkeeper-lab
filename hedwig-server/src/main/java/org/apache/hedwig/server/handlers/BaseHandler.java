@@ -41,6 +41,7 @@ public abstract class BaseHandler implements Handler {
 
 
     public void handleRequest(final PubSubRequest request, final Channel channel) {
+    	System.out.println("{learn}shouldClaim "+request.getShouldClaim());
         topicMgr.getOwner(request.getTopic(), request.getShouldClaim(),
         new Callback<HedwigSocketAddress>() {
             @Override

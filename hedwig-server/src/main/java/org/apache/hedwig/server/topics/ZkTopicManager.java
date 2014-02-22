@@ -78,7 +78,7 @@ public class ZkTopicManager extends AbstractTopicManager implements TopicManager
         super(cfg, scheduler);
         this.zk = zk;
         this.hubManager = new ZkHubServerManager(cfg, zk, addr);
-
+        System.out.println("{learn}addr "+addr.getHostname());
         myHubLoad = new HubLoad(topics.size());
         this.hubManager.registerListener(new HubServerManager.ManagerListener() {
             @Override
@@ -139,7 +139,7 @@ public class ZkTopicManager extends AbstractTopicManager implements TopicManager
             cb.operationFinished(ctx, addr);
             return;
         }
-
+        System.out.println("realgetOwner...................");
         new ZkGetOwnerOp(topic, shouldClaim, cb, ctx).read();
     }
 
@@ -192,13 +192,15 @@ public class ZkTopicManager extends AbstractTopicManager implements TopicManager
             zk.getData(hubPath, false, new SafeAsyncZKCallback.DataCallback() {
                 @Override
                 public void safeProcessResult(int rc, String path, Object ctx, byte[] data, Stat stat) {
-
+                	
                     if (rc == Code.NONODE.intValue()) {
-                        claimOrChoose();
+                    	System.out.println("{learn} nonode ,choose");
+                        claimOrChoose(); 
                         return;
                     }
 
                     if (rc != Code.OK.intValue()) {
+                    	System.out.println("{learn} rc not ok could not read");
                         KeeperException e = ZkUtils.logErrorAndCreateZKException("Could not read ownership for topic: "
                                             + topic.toStringUtf8(), path, rc);
                         cb.operationFailed(ctx, new PubSubException.ServiceDownException(e));
@@ -210,12 +212,14 @@ public class ZkTopicManager extends AbstractTopicManager implements TopicManager
                         HubInfo ownerHubInfo = HubInfo.parse(new String(data, UTF_8));
                         HedwigSocketAddress owner = ownerHubInfo.getAddress();
                         if (!owner.equals(addr)) {
+                        	System.out.println("{learn} owner not equal addr");
                             if (logger.isDebugEnabled()) {
                                 logger.debug("topic: " + topic.toStringUtf8() + " belongs to someone else: " + owner);
                             }
                             cb.operationFinished(ctx, owner);
                             return;
                         }
+                        System.out.println("{learn} owner  equals addr");
                         logger.info("Discovered stale self-node for topic: " + topic.toStringUtf8() + ", will delete it");
                     } catch (HubInfo.InvalidHubInfoException ihie) {
                         logger.info("Discovered invalid hub info for topic: " + topic.toStringUtf8() + ", will delete it : ", ihie);

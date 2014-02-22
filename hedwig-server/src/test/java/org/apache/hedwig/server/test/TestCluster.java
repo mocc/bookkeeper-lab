@@ -142,7 +142,7 @@ public class TestCluster extends HedwigHubTestBase {
         return new myServerConfiguration(port, sslPort);
     }
 
-    @Test(timeout=60000)
+    @Test(timeout=6000000)
     public void testMutiClients() throws Exception {
         ByteString topic = ByteString.copyFromUtf8("testAsyncPublishWithResponse");
         ByteString subid = ByteString.copyFromUtf8("mysubid");
@@ -234,11 +234,11 @@ public class TestCluster extends HedwigHubTestBase {
         });
         
         assertTrue("Timed out waiting on callback for publish requests.",
-                   publishLatch.await(1000, TimeUnit.SECONDS));
+                   publishLatch.await(6000, TimeUnit.SECONDS));
         assertEquals("Should be expected " + numMessages + " publishes.",
                      numMessages, numPublished.get());       
         assertTrue("Timed out waiting on callback for messages.",
-                   receiveLatch.await(30, TimeUnit.SECONDS));
+                   receiveLatch.await(6000, TimeUnit.SECONDS));
         assertEquals("Should be expected " + numMessages + " messages.",
                      numMessages, numReceived.get());
         

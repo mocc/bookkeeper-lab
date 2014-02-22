@@ -410,12 +410,15 @@ public class PubSubServer {
                     instantiateZookeeperClient();
                     instantiateMetadataManagerFactory();
                     tm = instantiateTopicManager();
+                    System.out.println("{learn}topic manager "+tm.getClass().getName());
                     pm = instantiatePersistenceManager(tm);
                     dm = new FIFODeliveryManager(tm, pm, conf);
                     dm.start();
 
                     sm = instantiateSubscriptionManager(tm, pm, dm);
+                    System.out.println("{learn}SubscriptionManager "+sm.getClass().getName());
                     rm = instantiateRegionManager(pm, scheduler);
+                    System.out.println("{learn}RegionManager "+rm.getClass().getName());
                     sm.addListener(rm);
 
                     allChannels = new DefaultChannelGroup("hedwig");

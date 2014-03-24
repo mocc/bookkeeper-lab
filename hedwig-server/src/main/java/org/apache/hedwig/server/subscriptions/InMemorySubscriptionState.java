@@ -17,8 +17,10 @@
  */
 package org.apache.hedwig.server.subscriptions;
 
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.TreeSet;
 
 import com.google.protobuf.ByteString;
 
@@ -29,6 +31,9 @@ import org.apache.hedwig.protocol.PubSubProtocol.SubscriptionPreferences;
 import org.apache.hedwig.protocol.PubSubProtocol.SubscriptionState;
 import org.apache.hedwig.protoextensions.MapUtils;
 import org.apache.hedwig.protoextensions.SubscriptionStateUtils;
+import org.apache.hedwig.server.persistence.ReadAheadCache;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class InMemorySubscriptionState {
     SubscriptionState subscriptionState;
@@ -36,7 +41,10 @@ public class InMemorySubscriptionState {
     MessageSeqId lastConsumeSeqId;
     Version version;
     long lastPersistedSeqId;
-
+    
+    long lastConsumedSeq;//add by liuyao
+    static Logger logger = LoggerFactory.getLogger(ReadAheadCache.class);//add by liuyao
+    
     public InMemorySubscriptionState(SubscriptionData subscriptionData, Version version, MessageSeqId lastConsumeSeqId) {
         this.subscriptionState = subscriptionData.getState();
         if (subscriptionData.hasPreferences()) {
@@ -85,7 +93,71 @@ public class InMemorySubscriptionState {
     public void setVersion(Version version) {
         this.version = version;
     }
+    //add by liuyao
+    protected static class SeqBlock {
+		public long start;
+		public long end;
 
+		public SeqBlock(long l1, long l2) {
+			this.start = l1;
+			this.end = l2;
+		}
+	}
+    TreeSet<SeqBlock> consumedSeqs = new TreeSet<SeqBlock>(new Comparator<SeqBlock>() {
+
+		@Override
+		public int compare(SeqBlock o1, SeqBlock o2) {
+			if (o1.start > o2.end)
+				return 1;
+			else if (o1.end < o2.start)
+				return -1;
+			else
+				return 0;
+		}
+	});
+    private boolean addToListAndMaybeConsume(long l) {
+		//lastConsumedTime = System.currentTimeMillis();
+    	//long lastConsumedSeq=this.lastConsumeSeqId.getLocalComponent();
+		if (l <= this.lastConsumedSeq) {
+			logger.info("Expired ConsumeSeq: " + l);
+			return false;
+		}
+		if (l == this.lastConsumedSeq + 1) {
+			this.lastConsumedSeq++;
+			if (consumedSeqs.isEmpty())
+				return true;
+			SeqBlock sb = consumedSeqs.first();
+			// The first element of the list can also be consumed
+			if (sb != null && sb.start == this.lastConsumedSeq + 1) {
+				this.lastConsumedSeq = sb.end;
+				consumedSeqs.remove(sb);
+			}
+			return true;
+		}
+
+		// Add to tree
+		SeqBlock tmp = new SeqBlock(l, l);
+		SeqBlock lower = consumedSeqs.lower(tmp);
+		SeqBlock higher = consumedSeqs.higher(tmp);
+
+		if (lower != null && lower.end + 1 == tmp.start) {
+			tmp.start = lower.start;
+			consumedSeqs.remove(lower);
+		}
+
+		if (higher != null && tmp.end + 1 == higher.start) {
+			tmp.end = higher.end;
+			consumedSeqs.remove(higher);
+		}
+
+		if (false == consumedSeqs.add(tmp)) {
+			logger.info("Duplicated consumeSeq: " + l);
+			return false;
+		}
+		return false;
+	}
+    //add by liuyao
+    
     /**
      *
      * @param lastConsumeSeqId
@@ -102,7 +174,11 @@ public class InMemorySubscriptionState {
         }
 
         // set consume seq id when it is larger
-        this.lastConsumeSeqId = lastConsumeSeqId;
+        if(addToListAndMaybeConsume(lastConsumeSeqId.getLocalComponent())){
+        	MessageSeqId.newBuilder(lastConsumeSeqId).setLocalComponent(this.lastConsumedSeq).build();
+        	this.lastConsumeSeqId = lastConsumeSeqId;
+        }
+        //this.lastConsumeSeqId = lastConsumeSeqId;
         if (interval < consumeInterval) {
             return false;
         }

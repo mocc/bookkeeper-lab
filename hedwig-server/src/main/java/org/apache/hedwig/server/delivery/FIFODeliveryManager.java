@@ -380,7 +380,8 @@ public class FIFODeliveryManager implements DeliveryManager, SubChannelDisconnec
             if (FIFODeliveryManager.this.cfg.getDefaultMessageWindowSize() > 0) {
                 messageWindowSize = FIFODeliveryManager.this.cfg.getDefaultMessageWindowSize();
             } else {
-                messageWindowSize = WindowThrottlingPolicy.UNLIMITED;
+                //messageWindowSize = WindowThrottlingPolicy.UNLIMITED;
+            	messageWindowSize =0;
             }
         }
         if (preferences.hasSubscriptionType() && SubscriptionType.CLUSTER == preferences.getSubscriptionType()) {

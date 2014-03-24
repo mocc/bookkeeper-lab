@@ -402,7 +402,7 @@ public class ClusterDeliveryEndPoint implements DeliveryEndPoint, ThrottlingPoli
             pendings.put(seqid, msg);
 
             // check whether this deliveryEndpoint should be throttled,
-            if (state.msgs.size() < state.messageWindowSize){
+            if (state.messageWindowSize==0 || state.msgs.size() < state.messageWindowSize){
                 deliverableEP.offer(clusterEP);
                 
             }

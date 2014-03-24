@@ -124,7 +124,7 @@ public class TestIndividual extends PubSubServerStandAloneTestBase {
         final CountDownLatch receiveLatch = new CountDownLatch(1);
 
         SubscriptionOptions opts = SubscriptionOptions.newBuilder()
-            .setCreateOrAttach(CreateOrAttach.CREATE_OR_ATTACH).setMessageWindowSize(15).build();
+            .setCreateOrAttach(CreateOrAttach.CREATE_OR_ATTACH).setMessageWindowSize(10).build();
         
         subscriber.subscribe(topic, subid, opts);
         
@@ -166,7 +166,7 @@ public class TestIndividual extends PubSubServerStandAloneTestBase {
         assertEquals("Should be expected " + numMessages + " publishes.",
                      numMessages, numPublished.get());
        
-    	for (int i=1; i<=15; i++) {
+    	for (int i=12; i<=25; i++) {
     		subscriber.consume(topic, subid,
 				            MessageSeqId.newBuilder().setLocalComponent(i).build());
 			

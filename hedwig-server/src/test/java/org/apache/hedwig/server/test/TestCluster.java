@@ -148,7 +148,7 @@ public class TestCluster extends HedwigHubTestBase {
         ByteString subid = ByteString.copyFromUtf8("mysubid");
 
         final String prefix = "AsyncMessage-";
-        final int numMessages = 30;
+        final int numMessages = 200;
 
         final AtomicInteger numPublished = new AtomicInteger(0);
         final CountDownLatch publishLatch = new CountDownLatch(1);
